@@ -8,20 +8,23 @@
       "key": "tid",
       "record": {
         "type": "object",
-        "required": ["sourceDid", "createdAt"],
+        "required": ["subject", "createdAt"],
         "properties": {
-          "sourceDid": {
+          "subject": {
             "type": "string",
-            "format": "did"
+            "format": "did",
+            "description": "DID of the garden the flower was taken from."
           },
           "createdAt": {
             "type": "string",
-            "format": "datetime"
+            "format": "datetime",
+            "description": "Client-declared timestamp when the flower was taken."
           },
           "note": {
             "type": "string",
-            "description": "Optional note or reason for taking this seed",
-            "maxLength": 500
+            "description": "Optional note or reason for taking this flower",
+            "maxGraphemes": 500,
+            "maxLength": 5000
           }
         }
       }

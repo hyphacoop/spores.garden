@@ -3,10 +3,9 @@
  * Supports markdown and HTML formats.
  */
 
-import { createRecord, putRecord, getCurrentDid } from '../oauth';
+import { createRecord, putRecord } from '../oauth';
 import { addSection, updateSection, getSiteOwnerDid } from '../config';
 import { getRecord } from '../at-client';
-import { setCachedActivity } from './recent-gardens';
 
 class CreateContent extends HTMLElement {
   private onClose: (() => void) | null = null;
@@ -91,34 +90,34 @@ class CreateContent extends HTMLElement {
     const contentTextarea = this.querySelector('#content-content') as HTMLTextAreaElement;
     const createBtn = this.querySelector('#create-content-btn') as HTMLButtonElement;
     const cancelBtn = this.querySelector('.modal-close') as HTMLButtonElement;
-
+    
     // Handle format change
     formatSelect?.addEventListener('change', (e) => {
       this.selectedFormat = (e.target as HTMLSelectElement).value;
     });
-
+    
     // Handle title input
     titleInput?.addEventListener('input', (e) => {
       this.contentTitle = (e.target as HTMLInputElement).value.trim();
     });
-
+    
     // Handle content input
     contentTextarea?.addEventListener('input', (e) => {
       this.contentContent = (e.target as HTMLTextAreaElement).value;
     });
-
+    
     // Handle create/save button
     createBtn?.addEventListener('click', async () => {
       if (!this.contentContent.trim()) {
         alert('Please enter some content.');
         return;
       }
-
+      
       if (createBtn) {
         createBtn.disabled = true;
         createBtn.textContent = this.editMode ? 'Saving...' : 'Creating...';
       }
-
+      
       try {
         if (this.editMode) {
           await this.updateContentRecord({
@@ -133,7 +132,7 @@ class CreateContent extends HTMLElement {
             format: this.selectedFormat
           });
         }
-
+        
         this.close();
       } catch (error) {
         console.error(`Failed to ${this.editMode ? 'update' : 'create'} content:`, error);
@@ -144,10 +143,10 @@ class CreateContent extends HTMLElement {
         }
       }
     });
-
+    
     // Handle cancel button
     cancelBtn?.addEventListener('click', () => this.close());
-
+    
     // Handle backdrop click
     this.addEventListener('click', (e) => {
       if (e.target === this) {
@@ -168,22 +167,16 @@ class CreateContent extends HTMLElement {
       format: contentData.format || 'markdown',
       createdAt: new Date().toISOString()
     };
-
+    
     if (contentData.title) {
       record.title = contentData.title;
     }
-
+    
     const response = await createRecord('garden.spores.content.text', record);
-
+    
     // Extract rkey from the response URI
     const rkey = response.uri.split('/').pop();
-
-    // Record local activity
-    const currentDid = getCurrentDid();
-    if (currentDid) {
-      setCachedActivity(currentDid, 'edit', new Date());
-    }
-
+    
     // Add section to config referencing this content
     const section: any = {
       type: 'content',
@@ -191,14 +184,14 @@ class CreateContent extends HTMLElement {
       rkey: rkey,
       format: contentData.format
     };
-
+    
     // Only add title if provided
     if (contentData.title) {
       section.title = contentData.title;
     }
-
+    
     addSection(section);
-
+    
     // Trigger re-render
     window.dispatchEvent(new CustomEvent('config-updated'));
   }
@@ -221,13 +214,13 @@ class CreateContent extends HTMLElement {
         format: contentData.format || 'markdown',
         createdAt: new Date().toISOString()
       };
-
+      
       if (contentData.title) {
         record.title = contentData.title;
       }
-
+      
       await putRecord('garden.spores.content.text', this.editRkey, record);
-
+      
       // Update section config if title changed
       if (this.editSectionId) {
         const updates: any = { format: contentData.format };
@@ -247,13 +240,7 @@ class CreateContent extends HTMLElement {
       }
       updateSection(this.editSectionId, updates);
     }
-
-    // Record local activity
-    const currentDid = getCurrentDid();
-    if (currentDid) {
-      setCachedActivity(currentDid, 'edit', new Date());
-    }
-
+    
     // Trigger re-render
     window.dispatchEvent(new CustomEvent('config-updated'));
   }

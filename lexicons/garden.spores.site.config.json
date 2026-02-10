@@ -4,19 +4,21 @@
   "defs": {
     "main": {
       "type": "record",
-      "key": "self",
+      "key": "literal:self",
       "description": "Site configuration for spores.garden, including title and subtitle.",
       "record": {
         "type": "object",
         "properties": {
           "title": {
             "type": "string",
-            "maxLength": 100,
+            "maxGraphemes": 100,
+            "maxLength": 1000,
             "description": "Site title"
           },
           "subtitle": {
             "type": "string",
-            "maxLength": 200,
+            "maxGraphemes": 200,
+            "maxLength": 2000,
             "description": "Site subtitle"
           }
         }

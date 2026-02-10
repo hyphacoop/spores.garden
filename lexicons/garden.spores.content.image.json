@@ -18,16 +18,19 @@
                         "accept": [
                             "image/*"
                         ],
-                        "maxSize": 10000000
+                        "maxSize": 10000000,
+                        "description": "The image blob."
                     },
                     "title": {
                         "type": "string",
-                        "maxLength": 200,
+                        "maxGraphemes": 200,
+                        "maxLength": 2000,
                         "description": "Optional title for the image."
                     },
                     "createdAt": {
                         "type": "string",
-                        "format": "datetime"
+                        "format": "datetime",
+                        "description": "Client-declared timestamp when the image was uploaded."
                     }
                 }
             }

@@ -4,7 +4,7 @@
   "defs": {
     "main": {
       "type": "record",
-      "key": "self",
+      "key": "literal:self",
       "description": "Site layout for spores.garden, defining the order of sections.",
       "record": {
         "type": "object",

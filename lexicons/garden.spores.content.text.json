@@ -4,19 +4,22 @@
   "defs": {
     "main": {
       "type": "record",
+      "key": "tid",
       "description": "Custom content block for spores.garden sites",
       "record": {
         "type": "object",
-        "required": ["content"],
+        "required": ["content", "createdAt"],
         "properties": {
           "title": {
             "type": "string",
-            "maxLength": 200,
+            "maxGraphemes": 200,
+            "maxLength": 2000,
             "description": "Block title"
           },
           "content": {
             "type": "string",
-            "maxLength": 50000,
+            "maxGraphemes": 50000,
+            "maxLength": 500000,
             "description": "Block content"
           },
           "format": {

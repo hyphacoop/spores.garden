@@ -48,11 +48,11 @@ export async function renderCollectedFlowers(
     const grid = document.createElement('div');
     grid.className = 'flower-grid'; // Re-use flower-grid style
 
-    const uniqueDids = [...new Set(takenFlowers.map((r: any) => r.value.sourceDid).filter((d: any) => typeof d === 'string'))] as string[];
+    const uniqueDids = [...new Set(takenFlowers.map((r: any) => r.value.subject).filter((d: any) => typeof d === 'string'))] as string[];
     const profileMap = await getProfiles(uniqueDids);
 
     for (const flowerRecord of takenFlowers) {
-      const sourceDid = flowerRecord.value.sourceDid;
+      const subject = flowerRecord.value.subject;
       const createdAt = flowerRecord.value.createdAt;
       const note = flowerRecord.value.note;
       const rkey = flowerRecord.uri?.split('/').pop();
@@ -61,22 +61,22 @@ export async function renderCollectedFlowers(
       flowerEl.className = 'flower-grid-item';
 
       const link = document.createElement('a');
-      link.href = `/@${sourceDid}`;
-      link.title = `View ${sourceDid}'s garden`;
+      link.href = `/@${subject}`;
+      link.title = `View ${subject}'s garden`;
 
-      const profile = profileMap.get(sourceDid) as { handle?: string; displayName?: string } | null | undefined;
-      const safeHandle = getSafeHandle(profile?.handle, sourceDid);
+      const profile = profileMap.get(subject) as { handle?: string; displayName?: string } | null | undefined;
+      const safeHandle = getSafeHandle(profile?.handle, subject);
       link.href = `/@${safeHandle}`;
-      link.title = `View ${sourceDid}'s garden`;
+      link.title = `View ${subject}'s garden`;
 
-      const displayHandle = safeHandle === sourceDid ? truncateDid(sourceDid) : safeHandle;
+      const displayHandle = safeHandle === subject ? truncateDid(subject) : safeHandle;
       const displayName = profile?.displayName || displayHandle;
-      if (displayName !== sourceDid) {
+      if (displayName !== subject) {
         link.title = `View ${displayName}'s garden`;
       }
 
       const viz = document.createElement('did-visualization');
-      viz.setAttribute('did', sourceDid);
+      viz.setAttribute('did', subject);
       link.appendChild(viz);
 
       flowerEl.appendChild(link);
@@ -103,7 +103,7 @@ export async function renderCollectedFlowers(
         editBtn.addEventListener('click', () => {
           openEditNoteModal(note ?? '', (newNote) => {
             putRecord('garden.spores.social.takenFlower', rkey, {
-              sourceDid,
+              subject,
               createdAt,
               note: newNote,
             })

@@ -209,7 +209,7 @@ describe('Field Extractor', () => {
       expect(fields.content).toBeTruthy();
     });
 
-    it('should extract fields from spores.garden text content', () => {
+    it('should extract fields from spores.garden content', () => {
       const record = {
         value: {
           $type: 'garden.spores.content.text',

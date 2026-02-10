@@ -4,6 +4,7 @@
   "defs": {
     "main": {
       "type": "record",
+      "key": "tid",
       "description": "A single site section for spores.garden. Each section is a record in a collection.",
       "record": {
         "type": "object",
@@ -16,7 +17,8 @@
           },
           "title": {
             "type": "string",
-            "maxLength": 200,
+            "maxGraphemes": 200,
+            "maxLength": 2000,
             "description": "Section title"
           },
           "layout": {
@@ -39,7 +41,8 @@
           },
           "content": {
             "type": "string",
-            "maxLength": 50000,
+            "maxGraphemes": 50000,
+            "maxLength": 500000,
             "description": "Content for block sections"
           },
           "format": {

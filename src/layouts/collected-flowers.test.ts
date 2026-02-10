@@ -67,7 +67,7 @@ describe('Collected Flowers Layout', () => {
         const mockFlowers = [
             {
                 uri: 'at://did/col/1',
-                value: { sourceDid: 'did:plc:source1', note: 'Nice flower' }
+                value: { subject: 'did:plc:source1', note: 'Nice flower' }
             }
         ];
         vi.mocked(atClient.listRecords).mockResolvedValue({ records: mockFlowers, cursor: '' });
@@ -96,7 +96,7 @@ describe('Collected Flowers Layout', () => {
         const mockFlowers = [
             {
                 uri: 'at://did/col/1',
-                value: { sourceDid: 'did:plc:source1' }
+                value: { subject: 'did:plc:source1' }
             }
         ];
         vi.mocked(atClient.listRecords).mockResolvedValue({ records: mockFlowers, cursor: '' });

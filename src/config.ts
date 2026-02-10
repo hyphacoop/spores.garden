@@ -1,11 +1,10 @@
-import { getRecord, listRecords, resolveHandle, parseAtUri } from './at-client';
-import { createRecord, putRecord, getCurrentDid, isLoggedIn, deleteRecord } from './oauth';
+import { getRecord, resolveHandle } from './at-client';
+import { putRecord, getCurrentDid, isLoggedIn, deleteRecord } from './oauth';
 import { getThemePreset, generateThemeFromDid } from './themes/engine';
 import { registerGarden } from './components/recent-gardens';
 
 const CONFIG_COLLECTION = 'garden.spores.site.config';
-const SECTION_COLLECTION = 'garden.spores.site.section';
-const LAYOUT_COLLECTION = 'garden.spores.site.layout';
+const SECTIONS_COLLECTION = 'garden.spores.site.sections';
 const SPECIAL_SPORE_COLLECTION = 'garden.spores.item.specialSpore';
 const CONFIG_RKEY = 'self';
 
@@ -206,7 +205,6 @@ export function hasGardenIdentifierInUrl(loc: Location = location): boolean {
  */
 export async function initConfig() {
   const identifier = parseIdentifierFromUrl();
-  console.log('[initConfig] URL identifier:', identifier);
 
   if (identifier) {
     if (identifier.type === 'did') {
@@ -214,9 +212,8 @@ export async function initConfig() {
     } else if (identifier.type === 'handle') {
       try {
         siteOwnerDid = await resolveHandle(identifier.value);
-        console.log(`[initConfig] Resolved handle "${identifier.value}" → DID: ${siteOwnerDid}`);
       } catch (error) {
-        console.warn('[initConfig] Failed to resolve handle, redirecting to homepage:', error);
+        console.warn('Failed to resolve handle, redirecting to homepage:', error);
         // Update URL to homepage (removes the invalid handle from URL)
         history.replaceState(null, '', '/');
         // Return homepage config with notification flag
@@ -227,17 +224,13 @@ export async function initConfig() {
       }
     }
   } else {
-    siteOwnerDid = getCurrentDid(); // Fallback to logged-in user
-    console.log('[initConfig] No URL identifier, fallback to logged-in DID:', siteOwnerDid);
-    if (!siteOwnerDid) {
-      currentConfig = getDefaultConfig();
-      return currentConfig;
-    }
+    siteOwnerDid = null;
+    currentConfig = getDefaultConfig();
+    return currentConfig;
   }
 
   const loaded = await loadUserConfig(siteOwnerDid);
   if (loaded === null) {
-    console.log('[initConfig] loadUserConfig returned null — building preview config');
     // No config record: set preview config so the app can render theme + flower
     currentConfig = buildPreviewConfig(siteOwnerDid);
   }
@@ -280,161 +273,42 @@ export function setSiteOwnerDid(did) {
   siteOwnerDid = did;
 }
 
-async function migrateSections(did: string) {
-  // Only attempt migration if logged in and viewing own garden
-  if (!isLoggedIn() || getCurrentDid() !== did) {
-    console.log(`Skipping migration for ${did}: Not logged in or not owner.`);
-    return;
-  }
-  const OLD_SECTIONS_COLLECTION = 'garden.spores.site.sections';
-  try {
-    const oldSectionsRecord = await getRecord(did, OLD_SECTIONS_COLLECTION, CONFIG_RKEY);
-    if (oldSectionsRecord && oldSectionsRecord.value && oldSectionsRecord.value.sections) {
-      console.log(`Migrating old sections record for user: ${did}`);
-
-      const sections = oldSectionsRecord.value.sections as any[];
-      const sectionUris: string[] = [];
-
-      for (const section of sections) {
-        const sectionRecord = {
-          $type: SECTION_COLLECTION,
-          type: section.type,
-          title: section.title || undefined,
-          layout: section.layout || undefined,
-          collection: section.collection || undefined,
-          rkey: section.rkey || undefined,
-          records: section.records || undefined,
-          content: section.content || undefined,
-          format: section.format || undefined,
-          limit: section.limit || undefined,
-          hideHeader: section.hideHeader || undefined,
-        };
-
-        const response = await createRecord(SECTION_COLLECTION, sectionRecord);
-        sectionUris.push(response.uri);
-      }
-
-      const layoutRecord = {
-        $type: LAYOUT_COLLECTION,
-        sections: sectionUris,
-      };
-      await putRecord(LAYOUT_COLLECTION, CONFIG_RKEY, layoutRecord);
-
-      await deleteRecord(OLD_SECTIONS_COLLECTION, CONFIG_RKEY);
-      console.log(`Migration successful for user: ${did}`);
-    }
-  } catch (error) {
-    if (error.message.includes('not found')) {
-        // This is expected if the user has already been migrated or is a new user.
-    } else {
-        console.error(`Error during sections migration check for user ${did}:`, error);
-    }
-  }
-}
-
 /**
  * Load config for a given user DID
  */
 export async function loadUserConfig(did) {
   if (!did) {
-    console.log('[loadUserConfig] No DID provided, returning default config');
     currentConfig = getDefaultConfig();
     return null;
   }
 
-  console.log(`[loadUserConfig] Loading config for DID: ${did}`);
-
   try {
-    await migrateSections(did);
+    const [configRecord, sectionsRecord] = await Promise.all([
+      getRecord(did, CONFIG_COLLECTION, CONFIG_RKEY),
+      getRecord(did, SECTIONS_COLLECTION, CONFIG_RKEY)
+    ]);
 
-    let configRecord = await getRecord(did, CONFIG_COLLECTION, CONFIG_RKEY);
-    let layoutRecord = await getRecord(did, LAYOUT_COLLECTION, CONFIG_RKEY);
-
-    console.log(`[loadUserConfig] configRecord (${CONFIG_COLLECTION}):`, configRecord ? 'found' : 'null');
-    console.log(`[loadUserConfig] layoutRecord (${LAYOUT_COLLECTION}):`, layoutRecord ? 'found' : 'null');
-    if (layoutRecord?.value) {
-      console.log(`[loadUserConfig] layout sections:`, layoutRecord.value.sections);
-    }
-
-    // Config record is required for onboarding check.
-    // If it doesn't exist, but we have a layout, create a default config.
+    // Config record is required for onboarding check
     if (!configRecord) {
-      if (layoutRecord) {
-        // Create a default config record
-        const defaultConfigToSave = {
-          $type: CONFIG_COLLECTION,
-          title: 'My Garden', // Default title
-          subtitle: '',
-        };
-        await putRecord(CONFIG_COLLECTION, CONFIG_RKEY, defaultConfigToSave);
-        configRecord = { value: defaultConfigToSave }; // Use this new config
-        console.log('[loadUserConfig] Created default garden config record during loading.');
-      } else {
-        // No config and no layout, so truly no garden setup.
-        console.log('[loadUserConfig] No config and no layout found — returning null (will show garden preview)');
-        return null;
-      }
+      return null;
     }
 
     const defaultConfig = getDefaultConfig();
     const config = configRecord.value;
 
+    // Theme is 100% generated from DID - no PDS storage needed
     const { theme: generatedTheme } = generateThemeFromDid(did);
     const theme = { ...generatedTheme };
 
-    let sections = [];
+    // Generate initial sections from DID as the base
+    let sections = generateInitialSections(did);
 
-    if (layoutRecord && layoutRecord.value && Array.isArray(layoutRecord.value.sections) && layoutRecord.value.sections.length > 0) {
-      const pdsSectionUris = layoutRecord.value.sections;
-      console.log(`[loadUserConfig] Fetching ${pdsSectionUris.length} section records from layout...`);
-
-      const pdsSectionResults = await Promise.all(
-        pdsSectionUris.map(async (uri, i) => {
-          const parsed = parseAtUri(uri);
-          if (!parsed) {
-            console.warn(`[loadUserConfig] Failed to parse section URI [${i}]: ${uri}`);
-            return null;
-          }
-          console.log(`[loadUserConfig]   Fetching section [${i}]: ${parsed.collection}/${parsed.rkey}`);
-          const record = await getRecord(parsed.did, parsed.collection, parsed.rkey);
-          if (!record) {
-            console.warn(`[loadUserConfig]   Section [${i}] returned null (not found): ${uri}`);
-          } else {
-            console.log(`[loadUserConfig]   Section [${i}] loaded: type=${record.value?.type}, title=${record.value?.title}, rkey=${record.value?.rkey || '(none)'}`);
-          }
-          return record;
-        })
-      );
-
-      // Map PDS records to section objects.
-      // sectionRkey = the section record's own rkey (for save/delete/layout URIs)
-      // rkey = the target record's rkey within the collection (from the record value, e.g. 'self' for profiles)
-      sections = pdsSectionResults.filter(Boolean).map(record => {
-        const sectionRkey = record.uri?.split('/').pop();
-        return {
-          ...record.value,
-          id: sectionRkey,
-          sectionRkey,
-        };
-      });
-
-      // Order sections by layout URI order
-      const sectionMap = new Map(sections.map(s => [s.sectionRkey, s]));
-      sections = pdsSectionUris.map(uri => {
-        const sectionRkey = uri.split('/').pop();
-        return sectionMap.get(sectionRkey);
-      }).filter(Boolean);
-
-      console.log(`[loadUserConfig] Final sections after ordering: ${sections.length}`);
-      sections.forEach((s, i) => console.log(`[loadUserConfig]   [${i}] type=${s.type} title=${s.title || '(none)'} rkey=${s.rkey || '(none)'} sectionRkey=${s.sectionRkey}`));
-    } else {
-      // No layout with sections — generate initial defaults for new/empty gardens
-      sections = generateInitialSections(did);
-      const reason = !layoutRecord ? 'no layout record' :
-        !layoutRecord.value ? 'layout record has no value' :
-        !Array.isArray(layoutRecord.value.sections) ? 'layout sections is not an array' :
-        'layout sections array is empty';
-      console.log(`[loadUserConfig] No layout sections (${reason}) — using ${sections.length} initial sections`);
+    // Overlay custom sections from PDS if they exist
+    if (sectionsRecord) {
+      const sectionsConfig = sectionsRecord.value;
+      if (sectionsConfig.sections && sectionsConfig.sections.length > 0) {
+        sections = sectionsConfig.sections;
+      }
     }
 
     currentConfig = {
@@ -442,16 +316,16 @@ export async function loadUserConfig(did) {
       ...config,
       theme: {
         ...theme,
-        preset: 'minimal'
+        preset: 'minimal' // Frontend-only preset for UI
       },
+
       sections,
     };
 
-    console.log(`[loadUserConfig] Config built successfully with ${sections.length} sections`);
     siteOwnerDid = did;
     return currentConfig;
   } catch (error) {
-    console.warn('[loadUserConfig] Failed to load user config, using default:', error);
+    console.warn('Failed to load user config, using default:', error);
     currentConfig = getDefaultConfig();
     return null;
   }
@@ -503,69 +377,57 @@ export async function saveConfig({ isInitialOnboarding = false } = {}) {
     siteOwnerDid = did;
   }
 
+  // Check if this is truly the first time creating a config
+  // If isInitialOnboarding is false, verify by checking if config exists
   let isFirstTimeConfig = isInitialOnboarding;
   if (!isInitialOnboarding) {
     try {
       const existingConfig = await getRecord(did, CONFIG_COLLECTION, CONFIG_RKEY);
       isFirstTimeConfig = !existingConfig;
     } catch (error) {
+      // If getRecord fails (e.g., 404), treat as first time
       isFirstTimeConfig = true;
     }
   }
-
-  const promises: Promise<any>[] = [];
 
   const configToSave: any = {
     $type: CONFIG_COLLECTION,
     title: currentConfig.title,
     subtitle: currentConfig.subtitle,
   };
-  promises.push(putRecord(CONFIG_COLLECTION, CONFIG_RKEY, configToSave));
 
-  const updatedSections = await Promise.all(currentConfig.sections.map(async (section) => {
-    const sectionRecord = {
-      $type: SECTION_COLLECTION,
-      type: section.type,
-      title: section.title || undefined,
-      layout: section.layout || undefined,
-      collection: section.collection || undefined,
-      rkey: section.rkey || undefined,
-      records: section.records || undefined,
-      content: section.content || undefined,
-      format: section.format || undefined,
-      limit: section.limit || undefined,
-      hideHeader: section.hideHeader || undefined,
-    };
+  // Styles and sections are generated client-side from DID
+  // No need to write them to PDS
 
-    if (section.sectionRkey) {
-      await putRecord(SECTION_COLLECTION, section.sectionRkey, sectionRecord);
-      return section;
-    } else {
-      const response = await createRecord(SECTION_COLLECTION, sectionRecord);
-      const newSectionRkey = response.uri.split('/').pop();
-      return { ...section, sectionRkey: newSectionRkey, uri: response.uri };
-    }
-  }));
-  currentConfig.sections = updatedSections;
+  // Write config and sections to PDS
+  const promises: Promise<any>[] = [
+    putRecord(CONFIG_COLLECTION, CONFIG_RKEY, configToSave)
+  ];
 
-  const sectionUris = currentConfig.sections.map(s => `at://${did}/${SECTION_COLLECTION}/${s.sectionRkey}`);
-  promises.push(putRecord(LAYOUT_COLLECTION, CONFIG_RKEY, {
-    $type: LAYOUT_COLLECTION,
-    sections: sectionUris,
-  }));
+  // Save sections configuration
+  // Even though we generate defaults client-side, we need to save user customizations (ordering, new sections)
+  if (currentConfig.sections) {
+    promises.push(putRecord(SECTIONS_COLLECTION, CONFIG_RKEY, {
+      $type: SECTIONS_COLLECTION,
+      sections: currentConfig.sections
+    }));
+  }
 
+  // On first config, create special spore if lucky (or if test DID)
   if (isFirstTimeConfig) {
     const rng = seededRandom(did);
+    // 1 in 10 chance to get a special spore, OR test DID always gets one
     const shouldGetSpore = TEST_SPORE_DIDS.includes(did) || rng() < 0.1;
     if (shouldGetSpore) {
       promises.push(putRecord(SPECIAL_SPORE_COLLECTION, CONFIG_RKEY, {
         $type: SPECIAL_SPORE_COLLECTION,
-        subject: did,
+        subject: did, // Subject for backlink indexing (origin garden)
         createdAt: new Date().toISOString()
       }));
     }
 
     // Clone Bluesky profile to garden.spores.site.profile
+    // Fetches the raw app.bsky.actor.profile record to get blob refs (not CDN URLs)
     try {
       const bskyProfileRecord = await getRecord(did, 'app.bsky.actor.profile', 'self');
       if (bskyProfileRecord?.value) {
@@ -573,21 +435,34 @@ export async function saveConfig({ isInitialOnboarding = false } = {}) {
         const profileRecord: any = {
           $type: 'garden.spores.site.profile',
           createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-          displayName: bskyProfile.displayName,
-          description: bskyProfile.description,
-          avatar: bskyProfile.avatar,
-          banner: bskyProfile.banner,
+          updatedAt: new Date().toISOString()
         };
+
+        if (bskyProfile.displayName) {
+          profileRecord.displayName = bskyProfile.displayName;
+        }
+        if (bskyProfile.description) {
+          profileRecord.description = bskyProfile.description;
+        }
+        // Copy blob refs directly - they reference blobs on the same PDS
+        if (bskyProfile.avatar) {
+          profileRecord.avatar = bskyProfile.avatar;
+        }
+        if (bskyProfile.banner) {
+          profileRecord.banner = bskyProfile.banner;
+        }
+
         promises.push(putRecord('garden.spores.site.profile', 'self', profileRecord));
       }
     } catch (error) {
-      console.warn('Failed to clone Bluesky profile:', error);
+      console.warn('Failed to clone Bluesky profile to garden.spores.site.profile:', error);
+      // Don't fail the entire onboarding if profile cloning fails
     }
   }
 
   await Promise.all(promises);
 
+  // Register this garden in the recent gardens discovery system
   registerGarden(did);
 
   return currentConfig;
@@ -598,8 +473,8 @@ export async function saveConfig({ isInitialOnboarding = false } = {}) {
  */
 export function addSection(section) {
   const id = section.id || `section-${Date.now()}`;
-  // Do not set rkey here. saveConfig will handle it.
   const newSection = { ...section, id };
+
   currentConfig.sections = [...(currentConfig.sections || []), newSection];
   return newSection;
 }
@@ -616,16 +491,7 @@ export function updateSection(id, updates) {
 /**
  * Remove a section by ID
  */
-export async function removeSection(id) {
-  const sectionToRemove = currentConfig.sections.find(section => section.id === id);
-  if (sectionToRemove && sectionToRemove.sectionRkey && siteOwnerDid) {
-    try {
-      await deleteRecord(SECTION_COLLECTION, sectionToRemove.sectionRkey);
-    } catch (error) {
-      console.error(`Failed to delete section record ${sectionToRemove.sectionRkey} from PDS:`, error);
-      // Continue with local removal even if PDS delete fails
-    }
-  }
+export function removeSection(id) {
   currentConfig.sections = currentConfig.sections.filter(section => section.id !== id);
 }
 

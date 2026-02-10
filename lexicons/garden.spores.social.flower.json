@@ -12,11 +12,13 @@
         "properties": {
           "subject": {
             "type": "string",
-            "format": "did"
+            "format": "did",
+            "description": "DID of the garden owner receiving the flower."
           },
           "createdAt": {
             "type": "string",
-            "format": "datetime"
+            "format": "datetime",
+            "description": "Client-declared timestamp when the flower was planted."
           }
         }
       }

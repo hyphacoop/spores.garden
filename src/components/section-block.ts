@@ -320,7 +320,7 @@ class SectionBlock extends HTMLElement {
             }
           }
         }
-        await removeSection(this.section.id);
+        removeSection(this.section.id);
 
         // Save the updated sections to PDS
         try {
@@ -426,13 +426,12 @@ class SectionBlock extends HTMLElement {
 
     // Load existing profile data
     const ownerDid = getSiteOwnerDid();
-    const profileRkey = this.section.rkey || (this.section.collection === 'garden.spores.site.profile' ? 'self' : undefined);
-    if (this.section.collection === 'garden.spores.site.profile' && profileRkey && ownerDid) {
+    if (this.section.collection === 'garden.spores.site.profile' && this.section.rkey && ownerDid) {
       try {
-        const record = await getRecord(ownerDid, this.section.collection, profileRkey);
+        const record = await getRecord(ownerDid, this.section.collection, this.section.rkey);
         if (record && record.value) {
           modal.editProfile({
-            rkey: profileRkey,
+            rkey: this.section.rkey,
             sectionId: this.section.id,
             displayName: record.value.displayName || '',
             description: record.value.description || '',
@@ -555,26 +554,25 @@ class SectionBlock extends HTMLElement {
     container.appendChild(loadingEl);
 
     try {
+      // Try to load from profile record first
       let profileData = null;
-      let collectionToFetch = this.section.collection;
-      let rkeyToFetch = this.section.rkey;
+      let useSporesProfile = false;
 
-      // Profile records are singletons at rkey 'self'
-      if (collectionToFetch === 'garden.spores.site.profile' && !rkeyToFetch) {
-        rkeyToFetch = 'self';
-      }
-
-      if (collectionToFetch === 'garden.spores.site.profile' && rkeyToFetch) {
+      if (this.section.collection === 'garden.spores.site.profile' && this.section.rkey) {
         try {
-          const record = await getRecord(ownerDid, collectionToFetch, rkeyToFetch);
+          const record = await getRecord(ownerDid, this.section.collection, this.section.rkey);
           if (record && record.value) {
+            // Convert blob references to URLs if present
             let avatarUrl = null;
             let bannerUrl = null;
 
             if (record.value.avatar && (record.value.avatar.ref || record.value.avatar.$link)) {
+              // Avatar is a blob reference - convert to URL
               avatarUrl = await getBlobUrl(ownerDid, record.value.avatar);
             }
+
             if (record.value.banner && (record.value.banner.ref || record.value.banner.$link)) {
+              // Banner is a blob reference - convert to URL
               bannerUrl = await getBlobUrl(ownerDid, record.value.banner);
             }
 
@@ -584,14 +582,15 @@ class SectionBlock extends HTMLElement {
               avatar: avatarUrl,
               banner: bannerUrl
             };
+            useSporesProfile = true;
           }
         } catch (error) {
-          console.warn(`Failed to load custom profile from ${collectionToFetch}/${rkeyToFetch}, falling back to Bluesky profile:`, error);
+          console.warn('Failed to load profile record, falling back to Bluesky profile:', error);
         }
       }
 
-      // If no profileData yet, or if explicitly configured to use Bluesky profile, fetch Bluesky profile
-      if (!profileData || collectionToFetch === 'app.bsky.actor.profile') {
+      // Fall back to Bluesky profile if no record found
+      if (!profileData) {
         const profile = await getProfile(ownerDid);
         if (!profile) {
           throw new Error('Could not load profile');

@@ -4,18 +4,21 @@
   "defs": {
     "main": {
       "type": "record",
+      "key": "literal:self",
       "description": "Custom profile information for spores.garden sites",
       "record": {
         "type": "object",
         "properties": {
           "displayName": {
             "type": "string",
-            "maxLength": 200,
+            "maxGraphemes": 200,
+            "maxLength": 2000,
             "description": "Display name"
           },
           "description": {
             "type": "string",
-            "maxLength": 5000,
+            "maxGraphemes": 5000,
+            "maxLength": 50000,
             "description": "Profile description/bio"
           },
           "avatar": {
