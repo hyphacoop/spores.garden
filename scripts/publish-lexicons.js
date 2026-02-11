@@ -20,23 +20,40 @@ const atProtoLexiconDir = path.join(wellKnownDir, 'atproto-lexicon');
     }
 });
 
-// Read all JSON files from lexicons directory
-const files = fs.readdirSync(lexiconsDir).filter(file => file.endsWith('.json'));
+// Recursively find all JSON files in lexicons directory
+function findJsonFiles(dir) {
+    const results = [];
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+        const fullPath = path.join(dir, entry.name);
+        if (entry.isDirectory()) {
+            results.push(...findJsonFiles(fullPath));
+        } else if (entry.name.endsWith('.json')) {
+            results.push(fullPath);
+        }
+    }
+    return results;
+}
+
+const files = findJsonFiles(lexiconsDir);
 const bundle = [];
 
 console.log(`Publishing ${files.length} lexicons...`);
 
-files.forEach(file => {
-    const srcPath = path.join(lexiconsDir, file);
+files.forEach(srcPath => {
     const content = fs.readFileSync(srcPath, 'utf8');
     const json = JSON.parse(content);
     bundle.push(json);
 
-    const nsid = file.replace(/\.json$/, '');
+    // Read NSID from the JSON id field
+    const nsid = json.id;
+    if (!nsid) {
+        console.warn(`  WARNING: No id field in ${srcPath}, skipping`);
+        return;
+    }
 
     // 1. /lexicons/<nsid>.json
-    const legacyDest = path.join(publicLexiconsDir, file);
-    fs.copyFileSync(srcPath, legacyDest);
+    const legacyDest = path.join(publicLexiconsDir, `${nsid}.json`);
+    fs.writeFileSync(legacyDest, content);
 
     // 2. /.well-known/atproto-lexicon/<nsid> and .json alias
     const rfcDest = path.join(atProtoLexiconDir, nsid);

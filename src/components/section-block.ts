@@ -6,7 +6,7 @@
 
 import { getCollectionRecords, getRecordsByUris } from '../records/loader';
 import { getSiteOwnerDid, getConfig, updateSection, removeSection, moveSectionUp, moveSectionDown, saveConfig } from '../config';
-import { getProfile, getRecord, getBlobUrl } from '../at-client';
+import { getProfile, getRecord, getBlobUrl, parseAtUri } from '../at-client';
 import { renderRecord, getAvailableLayouts } from '../layouts/index';
 import { renderCollectedFlowers } from '../layouts/collected-flowers';
 import { createErrorMessage, createLoadingSpinner } from '../utils/loading-states';
@@ -284,22 +284,27 @@ class SectionBlock extends HTMLElement {
 
       if (confirmed) {
         // If this is a content/block with a PDS record, delete it
-        if ((this.section.type === 'content' || this.section.type === 'block') &&
-          this.section.collection === 'garden.spores.content.text' &&
-          this.section.rkey) {
-          try {
-            const { deleteRecord } = await import('../oauth');
-            await deleteRecord('garden.spores.content.text', this.section.rkey);
-          } catch (error) {
-            console.error('Failed to delete content record from PDS:', error);
-            // Continue with section removal even if PDS delete fails
+        if (this.section.type === 'content' || this.section.type === 'block') {
+          const parsed = this.section.ref ? parseAtUri(this.section.ref) : null;
+          const collection = parsed?.collection || this.section.collection;
+          const rkey = parsed?.rkey || this.section.rkey;
+
+          if (collection === 'garden.spores.content.text' && rkey) {
+            try {
+              const { deleteRecord } = await import('../oauth');
+              await deleteRecord(collection, rkey);
+            } catch (error) {
+              console.error('Failed to delete content record from PDS:', error);
+              // Continue with section removal even if PDS delete fails
+            }
           }
         }
 
         // If this is an image record section, delete the PDS record too
         if (this.section.type === 'records') {
-          let collection = this.section.collection as string | undefined;
-          let rkey = this.section.rkey as string | undefined;
+          const parsed = this.section.ref ? parseAtUri(this.section.ref) : null;
+          let collection = parsed?.collection || this.section.collection as string | undefined;
+          let rkey = parsed?.rkey || this.section.rkey as string | undefined;
 
           if ((!collection || !rkey) && this.section.records?.[0]) {
             const uri = this.section.records[0];
@@ -381,12 +386,16 @@ class SectionBlock extends HTMLElement {
 
     // Load existing block data
     const ownerDid = getSiteOwnerDid();
-    if (this.section.collection === 'garden.spores.content.text' && this.section.rkey && ownerDid) {
+    const parsed = this.section.ref ? parseAtUri(this.section.ref) : null;
+    const collection = parsed?.collection || this.section.collection;
+    const rkey = parsed?.rkey || this.section.rkey;
+
+    if (collection === 'garden.spores.content.text' && rkey && ownerDid) {
       try {
-        const record = await getRecord(ownerDid, this.section.collection, this.section.rkey);
+        const record = await getRecord(ownerDid, collection, rkey);
         if (record && record.value) {
           modal.editContent({
-            rkey: this.section.rkey,
+            rkey,
             sectionId: this.section.id,
             title: record.value.title || this.section.title || '',
             content: record.value.content || '',
@@ -426,10 +435,12 @@ class SectionBlock extends HTMLElement {
 
     // Load existing profile data
     const ownerDid = getSiteOwnerDid();
-    const profileRkey = this.section.rkey || (this.section.collection === 'garden.spores.site.profile' ? 'self' : undefined);
-    if (this.section.collection === 'garden.spores.site.profile' && profileRkey && ownerDid) {
+    const parsedRef = this.section.ref ? parseAtUri(this.section.ref) : null;
+    const profileCollection = parsedRef?.collection || this.section.collection;
+    const profileRkey = parsedRef?.rkey || this.section.rkey || (profileCollection === 'garden.spores.site.profile' ? 'self' : undefined);
+    if (profileCollection === 'garden.spores.site.profile' && profileRkey && ownerDid) {
       try {
-        const record = await getRecord(ownerDid, this.section.collection, profileRkey);
+        const record = await getRecord(ownerDid, profileCollection, profileRkey);
         if (record && record.value) {
           modal.editProfile({
             rkey: profileRkey,
@@ -556,8 +567,9 @@ class SectionBlock extends HTMLElement {
 
     try {
       let profileData = null;
-      let collectionToFetch = this.section.collection;
-      let rkeyToFetch = this.section.rkey;
+      const parsedProfileRef = this.section.ref ? parseAtUri(this.section.ref) : null;
+      let collectionToFetch = parsedProfileRef?.collection || this.section.collection;
+      let rkeyToFetch = parsedProfileRef?.rkey || this.section.rkey;
 
       // Profile records are singletons at rkey 'self'
       if (collectionToFetch === 'garden.spores.site.profile' && !rkeyToFetch) {
@@ -705,14 +717,18 @@ class SectionBlock extends HTMLElement {
     let title = '';
 
     // If section references a content record, load it from PDS
-    if (this.section.collection === 'garden.spores.content.text' && this.section.rkey && ownerDid) {
+    const parsedBlockRef = this.section.ref ? parseAtUri(this.section.ref) : null;
+    const blockCollection = parsedBlockRef?.collection || this.section.collection;
+    const blockRkey = parsedBlockRef?.rkey || this.section.rkey;
+
+    if (blockCollection === 'garden.spores.content.text' && blockRkey && ownerDid) {
       // Show loading state
       const loadingEl = createLoadingSpinner('Loading content...');
       container.innerHTML = '';
       container.appendChild(loadingEl);
 
       try {
-        const record = await getRecord(ownerDid, this.section.collection, this.section.rkey);
+        const record = await getRecord(ownerDid, blockCollection, blockRkey);
         if (record && record.value) {
           content = record.value.content || '';
           format = record.value.format || this.section.format || 'markdown';
@@ -757,7 +773,7 @@ class SectionBlock extends HTMLElement {
       container.appendChild(contentDiv);
 
       // In edit mode, make it editable (only for inline content, not records)
-      if (this.editMode && !this.section.rkey) {
+      if (this.editMode && !this.section.ref && !this.section.rkey) {
         contentDiv.contentEditable = 'true';
         contentDiv.addEventListener('blur', () => {
           updateSection(this.section.id, { content: contentDiv.innerText });

@@ -308,6 +308,7 @@ class CreateImage extends HTMLElement {
             layout: 'image',
             title: this.imageTitle || 'Image',
             records: [response.uri],
+            ref: response.uri,
             collection: 'garden.spores.content.image',
             rkey
         };

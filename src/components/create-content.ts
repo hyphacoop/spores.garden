@@ -187,6 +187,7 @@ class CreateContent extends HTMLElement {
     // Add section to config referencing this content
     const section: any = {
       type: 'content',
+      ref: response.uri,
       collection: 'garden.spores.content.text',
       rkey: rkey,
       format: contentData.format

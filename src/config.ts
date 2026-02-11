@@ -1,4 +1,4 @@
-import { getRecord, listRecords, resolveHandle, parseAtUri } from './at-client';
+import { getRecord, listRecords, resolveHandle, parseAtUri, buildAtUri } from './at-client';
 import { createRecord, putRecord, getCurrentDid, isLoggedIn, deleteRecord } from './oauth';
 import { getThemePreset, generateThemeFromDid } from './themes/engine';
 import { registerGarden } from './components/recent-gardens';
@@ -78,6 +78,7 @@ function generateInitialSections(did: string): any[] {
   sections.push({
     id: `section-${sectionId++}`,
     type: 'profile',
+    ref: buildAtUri(did, 'garden.spores.site.profile', 'self'),
     collection: 'garden.spores.site.profile',
     rkey: 'self',
     layout: 'profile'
@@ -411,8 +412,15 @@ export async function loadUserConfig(did) {
       // rkey = the target record's rkey within the collection (from the record value, e.g. 'self' for profiles)
       sections = pdsSectionResults.filter(Boolean).map(record => {
         const sectionRkey = record.uri?.split('/').pop();
+        const val = record.value;
+        // Construct ref from collection+rkey when absent (backward compat)
+        let ref = val.ref;
+        if (!ref && val.collection && val.rkey) {
+          ref = buildAtUri(did, val.collection, val.rkey);
+        }
         return {
-          ...record.value,
+          ...val,
+          ref,
           id: sectionRkey,
           sectionRkey,
         };
@@ -528,6 +536,7 @@ export async function saveConfig({ isInitialOnboarding = false } = {}) {
       type: section.type,
       title: section.title || undefined,
       layout: section.layout || undefined,
+      ref: section.ref || undefined,
       collection: section.collection || undefined,
       rkey: section.rkey || undefined,
       records: section.records || undefined,

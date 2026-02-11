@@ -53,6 +53,11 @@
             "maximum": 100,
             "description": "Maximum records to display"
           },
+          "ref": {
+            "type": "string",
+            "format": "at-uri",
+            "description": "AT-URI of the referenced record (for content/profile sections)"
+          },
           "hideHeader": {
             "type": "boolean",
             "description": "If true, hides the section header in display mode"

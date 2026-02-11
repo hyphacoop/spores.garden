@@ -18,6 +18,7 @@ export interface Section {
   type: 'profile' | 'records' | 'content' | 'block' | 'share-to-bluesky' | 'collected-flowers';
   layout?: string;
   title?: string;
+  ref?: string;
   collection?: string;
   rkey?: string;
   records?: string[];
