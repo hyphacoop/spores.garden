@@ -102,16 +102,23 @@ body {
   line-height: 1.5;
   color: var(--color-text);
   background-color: var(--color-background);
-  /* Isoline pattern background - fixed, 1:1 with viewport (size set in JS) */
-  background-image: var(--pattern-background, none);
-  background-size: var(--pattern-width, auto) var(--pattern-height, auto);
-  background-repeat: no-repeat;
-  background-attachment: fixed;
-  background-position: 0 0;
   /* Smooth color transitions when navigating between gardens */
   transition: background-color 0.6s ease-in-out, color 0.6s ease-in-out;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+}
+
+/* Isoline pattern background - composited as a GPU layer to avoid scroll repaints */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background-image: var(--pattern-background, none);
+  background-size: var(--pattern-width, auto) var(--pattern-height, auto);
+  background-repeat: no-repeat;
+  background-position: 0 0;
 }
 
 /* Skip navigation link for keyboard users */
@@ -221,6 +228,7 @@ site-app {
   display: flex;
   flex-direction: column;
   min-height: 100vh;
+  min-height: 100svh;
   /* Ensure main content is centered on ultra-wide screens */
   align-items: center;
   width: 100%;
@@ -704,8 +712,8 @@ body.has-pattern section-block.section {
   background: rgba(var(--color-background-rgb), 0.25) !important;
   border-radius: var(--border-radius);
   box-shadow: 0 4px 30px rgba(0, 0, 0, 0.1);
-  backdrop-filter: blur(80px);
-  -webkit-backdrop-filter: blur(80px);
+  backdrop-filter: blur(42px);
+  -webkit-backdrop-filter: blur(42px);
   border: 1px solid rgba(var(--color-text-rgb), 0.1);
   padding: var(--spacing-lg);
 }
@@ -723,8 +731,8 @@ body.has-pattern .header,
 body.has-pattern .controls.open {
   background: rgba(var(--color-background-rgb), 0.25) !important;
   box-shadow: 0 4px 30px rgba(0, 0, 0, 0.1);
-  backdrop-filter: blur(80px);
-  -webkit-backdrop-filter: blur(80px);
+  backdrop-filter: blur(42px);
+  -webkit-backdrop-filter: blur(42px);
   border-bottom: 1px solid rgba(var(--color-text-rgb), 0.1);
 }
 
@@ -753,6 +761,36 @@ body.has-pattern .header:has(.controls.open) {
   body.has-pattern .flower-grid-item {
     background: rgba(var(--color-background-rgb), 0.85) !important;
     box-shadow: 0 2px 12px rgba(0, 0, 0, 0.1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  body.has-pattern .section,
+  body.has-pattern section-block,
+  body.has-pattern section-block.section,
+  body.has-pattern .header,
+  body.has-pattern .controls.open,
+  body.has-pattern .garden-preview__flower-box,
+  body.has-pattern .flower-grid-item {
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    background: rgba(var(--color-background-rgb), 0.85) !important;
+  }
+}
+
+/* Firefox: body::before with position: fixed causes backdrop-filter scroll-edge flicker.
+   background-attachment: fixed on body avoids that compositing path. */
+@supports (-moz-user-select: text) {
+  body {
+    background-image: var(--pattern-background, none);
+    background-size: var(--pattern-width, auto) var(--pattern-height, auto);
+    background-repeat: no-repeat;
+    background-attachment: fixed;
+    background-position: 0 0;
+  }
+
+  body::before {
+    display: none;
   }
 }
 
@@ -1919,8 +1957,8 @@ body.has-pattern .flower-grid-item {
   background: rgba(var(--color-background-rgb), 0.25) !important;
   border-radius: var(--border-radius);
   box-shadow: 0 4px 30px rgba(0, 0, 0, 0.1);
-  backdrop-filter: blur(80px);
-  -webkit-backdrop-filter: blur(80px);
+  backdrop-filter: blur(42px);
+  -webkit-backdrop-filter: blur(42px);
   border: 1px solid rgba(var(--color-text-rgb), 0.1);
 }
 

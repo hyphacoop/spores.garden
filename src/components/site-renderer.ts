@@ -28,6 +28,7 @@ export class SiteRenderer {
     private data: SiteData;
     private renderId = 0;
     private scrollHandler: (() => void) | null = null;
+    private homepageBlobUrl: string | null = null;
 
     constructor(
         app: HTMLElement,
@@ -44,6 +45,10 @@ export class SiteRenderer {
     }
 
     async render() {
+        if (this.homepageBlobUrl) {
+            URL.revokeObjectURL(this.homepageBlobUrl);
+            this.homepageBlobUrl = null;
+        }
         const myRenderId = ++this.renderId;
         const config = getConfig() || {
             title: 'spores.garden',
@@ -418,6 +423,7 @@ export class SiteRenderer {
             );
             const isoBlob = new Blob([isoSvg], { type: 'image/svg+xml' });
             const isoUrl = URL.createObjectURL(isoBlob);
+            this.homepageBlobUrl = isoUrl; // tracked for cleanup on next render
             root.style.setProperty('--pattern-background', `url("${isoUrl}")`);
             root.style.setProperty('--pattern-width', `${isoW}px`);
             root.style.setProperty('--pattern-height', `${isoH}px`);
