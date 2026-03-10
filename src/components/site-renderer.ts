@@ -185,7 +185,12 @@ export class SiteRenderer {
                     this.sporesCache = null;
                     sporesPromise.then(spores => {
                         if (this.renderId !== myRenderId) return;
-                        if (spores.length > 0) {
+                        const uniqueSpores = spores.filter((spore, index, all) =>
+                            !!spore?.originGardenDid &&
+                            all.findIndex((candidate) => candidate.originGardenDid === spore.originGardenDid) === index
+                        );
+                        if (uniqueSpores.length > 0) {
+                            leftGroup.querySelector('.header-spores')?.remove();
                             const sporesWrap = document.createElement('div');
                             sporesWrap.className = 'header-spores';
                             sporesWrap.style.display = 'flex';
@@ -194,7 +199,7 @@ export class SiteRenderer {
                             sporesWrap.style.marginTop = '0';
                             sporesWrap.style.alignItems = 'center';
 
-                            spores.forEach(spore => {
+                            uniqueSpores.forEach(spore => {
                                 const sporeEl = document.createElement('div');
                                 sporeEl.title = 'Special Spore';
                                 sporeEl.dataset.originDid = spore.originGardenDid;

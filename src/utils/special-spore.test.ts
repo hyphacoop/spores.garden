@@ -1,13 +1,15 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { findSporeByOrigin, stealSpore } from './special-spore';
-import { getBacklinks, getRecord } from '../at-client';
+import { findAllHeldSpores, findSporeByOrigin, stealSpore } from './special-spore';
+import { getBacklinks, getRecord, listRecords } from '../at-client';
 import { createRecord } from '../oauth';
+import { isValidSpore } from '../config';
 import { showAlertModal } from './confirm-modal';
 import { getCollection } from '../config/nsid';
 
 vi.mock('../at-client', () => ({
   getBacklinks: vi.fn(),
   getRecord: vi.fn(),
+  listRecords: vi.fn(),
 }));
 
 vi.mock('../oauth', () => ({
@@ -29,6 +31,7 @@ describe('special spore guardrails', () => {
     vi.clearAllMocks();
     vi.useFakeTimers();
     vi.setSystemTime(now);
+    vi.mocked(isValidSpore).mockImplementation((did: string) => did === 'did:plc:origin');
   });
 
   it('ignores implausible future-timestamp records when resolving holder', async () => {
@@ -97,5 +100,41 @@ describe('special spore guardrails', () => {
       subject: 'did:plc:origin',
     }));
     expect(showAlertModal).toHaveBeenCalled();
+  });
+
+  it('deduplicates held spores returned from old and new collections', async () => {
+    vi.mocked(listRecords).mockResolvedValue({
+      records: [
+        {
+          value: {
+            subject: 'did:plc:origin',
+          },
+        },
+      ],
+    } as any);
+
+    vi.mocked(getBacklinks).mockResolvedValue({
+      records: [
+        { did: 'did:plc:holder', collection: 'garden.spores.item.specialSpore', rkey: 'abc' },
+      ],
+    } as any);
+
+    vi.mocked(getRecord).mockResolvedValue({
+      value: {
+        subject: 'did:plc:origin',
+        createdAt: '2026-02-16T11:58:00.000Z',
+      },
+    } as any);
+
+    const result = await findAllHeldSpores('did:plc:holder');
+
+    expect(result).toEqual([
+      expect.objectContaining({
+        originGardenDid: 'did:plc:origin',
+        currentOwnerDid: 'did:plc:holder',
+      }),
+    ]);
+    expect(getBacklinks).toHaveBeenCalledTimes(2);
+    expect(getRecord).toHaveBeenCalledTimes(2);
   });
 });
