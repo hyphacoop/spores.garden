@@ -139,6 +139,9 @@ class SectionBlock extends HTMLElement {
         case 'share-to-bluesky':
           await this.renderShareToBluesky(content);
           break;
+        case 'web-tile':
+          await this.renderWebTile(content);
+          break;
         default:
           content.innerHTML = `<p>Unknown section type: ${this.section.type}</p>`;
       }
@@ -366,6 +369,8 @@ class SectionBlock extends HTMLElement {
       typeInfo = 'Loading...';
     } else if (this.section.type === 'share-to-bluesky') {
       typeInfo = 'Share on Bluesky';
+    } else if (this.section.type === 'web-tile') {
+      typeInfo = 'Web Tile';
     } else {
       typeInfo = this.section.type.charAt(0).toUpperCase() + this.section.type.slice(1);
     }
@@ -832,6 +837,65 @@ class SectionBlock extends HTMLElement {
 
     buttonContainer.appendChild(button);
     container.appendChild(buttonContainer);
+  }
+
+  async renderWebTile(container) {
+    const tileUri = this.section.tileUri || this.section.ref;
+    if (!tileUri) {
+      container.innerHTML = '<p>No tile URI configured</p>';
+      return;
+    }
+
+    const parsed = parseAtUri(tileUri);
+    if (!parsed) {
+      container.innerHTML = '<p>Invalid tile URI</p>';
+      return;
+    }
+
+    if (parsed.collection !== 'ing.dasl.masl') {
+      container.innerHTML = '<p>Invalid tile: unexpected record type</p>';
+      return;
+    }
+
+    try {
+      const record = await getRecord(parsed.did, parsed.collection, parsed.rkey);
+      const root = record?.value?.resources?.['/'];
+      if (!root?.src) {
+        container.innerHTML = '<p>Tile record missing resources</p>';
+        return;
+      }
+
+      if (root['content-type'] !== 'text/html') {
+        container.innerHTML = '<p>Tile resource is not an HTML document</p>';
+        return;
+      }
+
+      const blobUrl = await getBlobUrl(parsed.did, root.src);
+      const response = await fetch(blobUrl);
+      if (!response.ok) {
+        throw new Error(`Blob fetch failed: ${response.status}`);
+      }
+      const html = await response.text();
+
+      const sizing = record.value.sizing || { width: 300, height: 300 };
+
+      const iframe = document.createElement('iframe');
+      iframe.srcdoc = html;
+      iframe.sandbox.add('allow-scripts');
+      iframe.style.width = `${sizing.width}px`;
+      iframe.style.height = `${sizing.height}px`;
+      iframe.style.maxWidth = '100%';
+      iframe.style.border = 'none';
+      iframe.style.borderRadius = '12px';
+      iframe.style.display = 'block';
+      iframe.style.margin = '0 auto';
+      iframe.title = record.value.name || 'Web Tile';
+
+      container.appendChild(iframe);
+    } catch (error) {
+      console.error('Failed to render web tile:', error);
+      container.innerHTML = '<p>Failed to load tile</p>';
+    }
   }
 
 }
