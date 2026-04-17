@@ -41,6 +41,7 @@ import {
 import { Client } from '@atcute/client';
 import type { OAuthConfig, ATClientOptions } from './types';
 import { debugLog } from './utils/logger';
+import { ATPROTO_GRANULAR_SCOPE } from './oauth-scope';
 
 export let authReady = false;
 
@@ -183,7 +184,7 @@ export async function login(handle: string) {
 
   const authUrl = await createAuthorizationUrl({
     target: { type: 'account', identifier: handle as any },
-    scope: oauthConfig.oauth.scope || 'atproto transition:generic'
+    scope: oauthConfig.oauth.scope || ATPROTO_GRANULAR_SCOPE
   });
 
   // Small delay to allow state persistence

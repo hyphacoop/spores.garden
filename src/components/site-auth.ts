@@ -1,5 +1,6 @@
 import { setSiteOwnerDid, loadUserConfig, hasUserConfig, getSiteOwnerDid, hasGardenIdentifierInUrl } from '../config';
 import { initOAuth, login, getCurrentDid } from '../oauth';
+import { ATPROTO_GRANULAR_SCOPE } from '../oauth-scope';
 import { applyTheme } from '../themes/engine';
 import { SiteRouter } from './site-router';
 import type { WelcomeModalElement, WelcomeAction } from '../types';
@@ -31,7 +32,7 @@ export class SiteAuth {
         // For local dev, AT Protocol uses a special loopback client_id format
         const isLocalDev = location.hostname === 'localhost' || location.hostname === '127.0.0.1';
         const redirectUri = `${location.origin}/`;
-        const scope = 'atproto transition:generic';
+        const scope = ATPROTO_GRANULAR_SCOPE;
 
         const clientId = isLocalDev
             ? `http://localhost?redirect_uri=${encodeURIComponent(redirectUri)}&scope=${encodeURIComponent(scope)}`
