@@ -6,6 +6,7 @@ import { getCollection } from '../config/nsid';
 import { setCachedActivity } from './recent-gardens';
 import { escapeHtml } from '../utils/sanitize';
 import { parseBskyPostUrl } from '../utils/bsky-url';
+import { publishFlowerTile } from '../tiles/tile-publisher';
 import './create-content';
 
 /**
@@ -89,6 +90,10 @@ export class SiteEditor {
             <span class="icon">🌼</span>
             <span>Collected Flowers</span>
           </button>
+          <button data-type="web-tile" class="section-type">
+            <span class="icon">🌸</span>
+            <span>Flower Tile</span>
+          </button>
           <button data-action="load-records" class="section-type">
             <span class="icon">📚</span>
             <span>Load Records</span>
@@ -152,6 +157,12 @@ export class SiteEditor {
     // If it's profile, check for existing or clone from Bluesky
     if (type === 'profile') {
       this.addProfileSection();
+      return;
+    }
+
+    // If it's web-tile, publish the flower tile and add the section
+    if (type === 'web-tile') {
+      this.addFlowerTileSection();
       return;
     }
 
@@ -267,6 +278,29 @@ export class SiteEditor {
     }
   }
 
+  async addFlowerTileSection() {
+    const did = getCurrentDid();
+    if (!did) {
+      this.showNotification('You must be logged in to add a flower tile.', 'error');
+      return;
+    }
+
+    this.showNotification('Publishing flower tile...', 'success');
+
+    try {
+      const { uri } = await publishFlowerTile(did);
+      this.addSectionToConfig({
+        type: 'web-tile',
+        ref: uri,
+        title: 'My Flower'
+      });
+      this.showNotification('Flower tile added!', 'success');
+    } catch (error) {
+      console.error('Failed to publish flower tile:', error);
+      this.showNotification('Failed to publish flower tile.', 'error');
+    }
+  }
+
   addSectionToConfig(params: { type: string, collection?: string, rkey?: string, title?: string, ref?: string }) {
     const config = getConfig();
     const id = `section-${Date.now()}`;
@@ -280,6 +314,10 @@ export class SiteEditor {
     if (params.type === 'collected-flowers') {
       section.layout = 'collected-flowers';
       section.title = 'Collected Flowers';
+    }
+
+    if (params.type === 'web-tile') {
+      section.layout = 'web-tile';
     }
 
     if (params.ref) {

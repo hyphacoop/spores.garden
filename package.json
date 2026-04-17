@@ -25,6 +25,8 @@
     "test:run": "vitest run"
   },
   "dependencies": {
+    "@atcute/cbor": "^2.3.2",
+    "@atcute/cid": "^2.4.1",
     "@atcute/client": "^4.2.1",
     "@atcute/identity-resolver": "^1.2.2",
     "@atcute/oauth-browser-client": "^2.0.3",

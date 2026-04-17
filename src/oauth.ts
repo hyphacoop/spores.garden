@@ -596,6 +596,27 @@ export async function uploadBlob(blob: Blob, mimeType: string) {
     throw new Error('Missing OAuth session');
   }
 
+  // Resolve PDS so we can log the actual endpoint being hit (the agent uses its own
+  // resolved service internally; this is logged for diagnosis).
+  let resolvedPds: string | undefined;
+  try {
+    if (identityResolver) {
+      const resolved = await identityResolver.resolve(currentSession.info.sub as any);
+      if (resolved?.pds) resolvedPds = resolved.pds;
+    }
+  } catch {
+    // Non-fatal — logging will note unknown PDS.
+  }
+
+  console.log('[uploadBlob] request', {
+    pds: resolvedPds || '(unresolved — agent default)',
+    endpoint: '/xrpc/com.atproto.repo.uploadBlob',
+    mimeType,
+    blobSize: blob.size,
+    blobType: blob.type,
+    did: currentSession.info.sub
+  });
+
   // Use the OAuthUserAgent.handle() method which automatically handles
   // DPoP authentication (AT Protocol OAuth doesn't use simple Bearer tokens)
   try {
@@ -607,17 +628,42 @@ export async function uploadBlob(blob: Blob, mimeType: string) {
       body: blob
     });
 
+    const requestId = response.headers.get('x-request-id')
+      || response.headers.get('x-amzn-requestid')
+      || response.headers.get('cf-ray')
+      || null;
+
     if (!response.ok) {
+      // Read the raw body once so we can both log it and parse it.
+      const rawBody = await response.text().catch(() => '');
+      let parsed: any = null;
+      try { parsed = rawBody ? JSON.parse(rawBody) : null; } catch { /* not JSON */ }
+
+      console.error('[uploadBlob] failed', {
+        status: response.status,
+        statusText: response.statusText,
+        requestId,
+        contentType: response.headers.get('content-type'),
+        rawBody: rawBody.slice(0, 2000),
+        parsed
+      });
+
       if (response.status === 401 || response.status === 403) {
         clearSessionDueToAuthFailure();
         throw new Error('Session expired, please log in again.');
       }
-      const errorData = await response.json().catch(() => ({}));
-      const errorMsg = errorData.message || errorData.error || `HTTP ${response.status}`;
+      const errorMsg = parsed?.message || parsed?.error || `HTTP ${response.status}`;
       throw new Error(`Failed to upload blob: ${errorMsg}`);
     }
 
     const data = await response.json();
+    console.log('[uploadBlob] success', {
+      status: response.status,
+      requestId,
+      blobRef: data?.blob,
+      blobMimeType: data?.blob?.mimeType,
+      blobSize: data?.blob?.size
+    });
 
     // Return response in the same format as other functions (with ok and data properties)
     return {
@@ -625,7 +671,7 @@ export async function uploadBlob(blob: Blob, mimeType: string) {
       data: data
     };
   } catch (error) {
-    console.error('uploadBlob error:', error);
+    console.error('[uploadBlob] error', error);
     throw error;
   }
 }
