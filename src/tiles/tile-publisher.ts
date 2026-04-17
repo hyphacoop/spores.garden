@@ -2,6 +2,8 @@
  * Publishes a flower web tile to the user's PDS as an ing.dasl.masl record.
  */
 
+import { encode } from '@atcute/cbor';
+import * as CID from '@atcute/cid';
 import { uploadBlob, createRecord } from '../oauth';
 import { generateFlowerTileHTML } from './flower-tile';
 
@@ -30,19 +32,23 @@ export async function publishFlowerTile(did: string): Promise<{ uri: string; cid
     throw new Error('Failed to upload tile blob');
   }
 
+  const tile = {
+    name: 'My Flower',
+    description: 'A unique flower generated from my DID on spores.garden',
+    sizing: { width: 300, height: 300 },
+    resources: {
+      '/': {
+        src: blobRef,
+        'content-type': 'text/html; charset=utf-8'
+      }
+    }
+  };
+
+  const maslCid = CID.toString(await CID.create(0x71, encode(tile)));
   const record = {
     $type: TILE_COLLECTION,
-    tile: {
-      name: 'My Flower',
-      description: 'A unique flower generated from my DID on spores.garden',
-      sizing: { width: 300, height: 300 },
-      resources: {
-        '/': {
-          src: blobRef,
-          'content-type': 'text/html; charset=utf-8'
-        }
-      }
-    },
+    cid: maslCid,
+    tile,
     createdAt: new Date().toISOString()
   };
 
