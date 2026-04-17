@@ -859,13 +859,15 @@ class SectionBlock extends HTMLElement {
 
     try {
       const record = await getRecord(parsed.did, parsed.collection, parsed.rkey);
-      const root = record?.value?.resources?.['/'];
+      const tile = record?.value?.tile ?? record?.value;
+      const root = tile?.resources?.['/'];
       if (!root?.src) {
         container.innerHTML = '<p>Tile record missing resources</p>';
         return;
       }
 
-      if (root['content-type'] !== 'text/html') {
+      const contentType = (root['content-type'] || '').split(';')[0].trim().toLowerCase();
+      if (contentType !== 'text/html') {
         container.innerHTML = '<p>Tile resource is not an HTML document</p>';
         return;
       }
@@ -877,7 +879,7 @@ class SectionBlock extends HTMLElement {
       }
       const html = await response.text();
 
-      const sizing = record.value.sizing || { width: 300, height: 300 };
+      const sizing = tile.sizing || { width: 300, height: 300 };
 
       const iframe = document.createElement('iframe');
       iframe.srcdoc = html;
@@ -889,7 +891,7 @@ class SectionBlock extends HTMLElement {
       iframe.style.borderRadius = '12px';
       iframe.style.display = 'block';
       iframe.style.margin = '0 auto';
-      iframe.title = record.value.name || 'Web Tile';
+      iframe.title = tile.name || 'Web Tile';
 
       container.appendChild(iframe);
     } catch (error) {

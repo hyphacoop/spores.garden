@@ -11,6 +11,7 @@ export const ATPROTO_GRANULAR_SCOPE = [
   'repo:coop.hypha.spores.site.section',
   'repo:coop.hypha.spores.social.flower',
   'repo:coop.hypha.spores.social.takenFlower',
+  'repo:ing.dasl.masl',
   'repo:garden.spores.content.image',
   'repo:garden.spores.content.text',
   'repo:garden.spores.item.specialSpore',
