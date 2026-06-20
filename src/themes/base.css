@@ -2562,6 +2562,182 @@ body.has-pattern .flower-grid-item {
   white-space: nowrap;
 }
 
+/* Nav search */
+.nav-search {
+  position: relative;
+  display: flex;
+  align-items: stretch;
+}
+
+.nav-search-input-wrap {
+  display: flex;
+  align-self: stretch;
+  overflow: hidden;
+  max-width: 0;
+  opacity: 0;
+  /* collapse: shrink immediately, fade only at the very end */
+  transition: max-width 250ms ease, opacity 80ms ease 190ms;
+}
+
+.nav-search.expanded .nav-search-input-wrap {
+  max-width: 220px;
+  opacity: 1;
+  /* expand: both animate in together */
+  transition: max-width 250ms ease, opacity 200ms ease;
+}
+
+.nav-search-input {
+  width: 220px;
+  height: 100%;
+  font-size: 0.875rem;
+  padding: 0 var(--spacing-md);
+  border-right: none;
+  box-sizing: border-box;
+}
+
+/* Keep input border stable in nav-search — the global :focus rule bumps it to 4px which shifts the layout */
+.nav-search-input:focus {
+  border-width: 2px;
+}
+
+/* Typeahead drawer */
+.nav-search-dropdown {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  background: var(--color-background);
+  border: var(--border-width) var(--border-style) var(--color-border-dark);
+  border-top: none;
+  z-index: 200;
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+  padding: var(--spacing-xs);
+  max-height: clamp(200px, 60vh, 400px);
+  overflow-y: auto;
+  /* Drawer closed state */
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(-6px);
+  transition: opacity 180ms ease, transform 180ms ease, visibility 0ms linear 180ms;
+}
+
+.nav-search-dropdown.open {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(0);
+  transition: opacity 180ms ease, transform 180ms ease, visibility 0ms linear 0ms;
+}
+
+/* Loading indicator */
+.nav-search-loader {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--spacing-sm);
+  color: var(--color-text-muted);
+  font-size: 0.75rem;
+}
+
+.nav-search-loader::after {
+  content: '';
+  width: 16px;
+  height: 16px;
+  border: 2px solid var(--color-border);
+  border-top-color: var(--color-border-dark);
+  border-radius: 50%;
+  animation: spin 0.6s linear infinite;
+}
+
+/* Sentinel — zero-height trigger for IntersectionObserver */
+.nav-search-sentinel {
+  height: 1px;
+  flex-shrink: 0;
+}
+
+.nav-search-result {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-sm) var(--spacing-md);
+  width: 100%;
+  text-align: left;
+  background: var(--result-bg, none);
+  border: var(--result-border-width, var(--border-width)) var(--result-border-style, var(--border-style)) var(--result-border, var(--color-border-dark));
+  cursor: pointer;
+  color: var(--result-text, var(--color-text));
+  font-family: inherit;
+  box-sizing: border-box;
+}
+
+.nav-search-result {
+  transition: transform var(--transition);
+}
+
+.nav-search-result:focus-visible {
+  outline: 3px solid var(--color-border-dark);
+  outline-offset: -3px;
+}
+
+.nav-search-result-identity {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.nav-search-result-name {
+  font-weight: 500;
+  font-size: 0.875rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.nav-search-result-handle {
+  font-size: 0.75rem;
+  color: var(--result-muted, var(--color-text-muted));
+}
+
+.nav-search-result:hover .nav-search-result-handle,
+.nav-search-result:focus .nav-search-result-handle {
+  color: inherit;
+  opacity: 0.75;
+}
+
+@media (max-width: 767px) {
+  /* Nav-search takes full controls column width and stays a flex row */
+  .nav-search {
+    width: 100%;
+  }
+
+  .nav-search.expanded .nav-search-input-wrap {
+    max-width: none;
+    flex: 1;
+  }
+
+  .nav-search-input {
+    width: 100%;
+  }
+
+  .nav-search-toggle {
+    min-height: 44px;
+  }
+
+  /* When expanded: shrink toggle back to icon size so input can fill the row */
+  .nav-search.expanded .nav-search-toggle {
+    width: auto !important;
+    flex-shrink: 0;
+  }
+
+  .nav-search-dropdown {
+    left: 0;
+    right: 0;
+    min-width: unset;
+    max-height: 50vh;
+  }
+}
+
 /* Post selector mobile: add side padding to elements that lose it when modal-content padding is 0 */
 @media (max-width: 479px) {
   .modal-content .welcome-selector p {

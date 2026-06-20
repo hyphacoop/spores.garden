@@ -480,6 +480,47 @@ export async function getProfile(did) {
   return response.json();
 }
 
+export interface ActorSearchResult {
+  did: string;
+  handle: string;
+  displayName?: string;
+  avatar?: string;
+}
+
+export async function searchActorsTypeahead(query: string, limit = 8): Promise<ActorSearchResult[]> {
+  const url = new URL('/xrpc/app.bsky.actor.searchActorsTypeahead', ENDPOINTS.BLUESKY_API_URL);
+  url.searchParams.set('q', query);
+  url.searchParams.set('limit', String(limit));
+  try {
+    const response = await fetch(url);
+    if (!response.ok) return [];
+    const data = await response.json();
+    return data.actors ?? [];
+  } catch {
+    return [];
+  }
+}
+
+export interface ActorSearchPage {
+  actors: ActorSearchResult[];
+  cursor?: string;
+}
+
+export async function searchActors(query: string, cursor?: string, limit = 8): Promise<ActorSearchPage> {
+  const url = new URL('/xrpc/app.bsky.actor.searchActors', ENDPOINTS.BLUESKY_API_URL);
+  url.searchParams.set('q', query);
+  url.searchParams.set('limit', String(limit));
+  if (cursor) url.searchParams.set('cursor', cursor);
+  try {
+    const response = await fetch(url);
+    if (!response.ok) return { actors: [] };
+    const data = await response.json();
+    return { actors: data.actors ?? [], cursor: data.cursor };
+  } catch {
+    return { actors: [] };
+  }
+}
+
 /** Max actors per getProfiles request (Bluesky API limit) */
 const GET_PROFILES_BATCH_SIZE = 25;
 

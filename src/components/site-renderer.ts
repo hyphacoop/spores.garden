@@ -1,6 +1,8 @@
 import { getConfig, getSiteOwnerDid, isOwner } from '../config';
+import { buildGardenPath } from '../utils/garden-url';
 import { isLoggedIn, getCurrentDid, logout } from '../oauth';
-import { getProfile } from '../at-client';
+import { getProfile, searchActors, type ActorSearchResult } from '../at-client';
+import { generateThemeFromDid } from '../themes/engine';
 import { escapeHtml } from '../utils/sanitize';
 import { getSafeHandle, truncateDid } from '../utils/identity';
 import { SiteRouter } from './site-router';
@@ -233,6 +235,222 @@ export class SiteRenderer {
         const controls = document.createElement('div');
         controls.className = 'controls';
 
+        // Nav search (collapsible + typeahead)
+        const navSearch = document.createElement('form');
+        navSearch.className = 'nav-search';
+        navSearch.id = 'nav-search-form';
+        navSearch.setAttribute('role', 'search');
+
+        const inputWrap = document.createElement('div');
+        inputWrap.className = 'nav-search-input-wrap';
+
+        const navInput = document.createElement('input');
+        navInput.type = 'text';
+        navInput.className = 'input nav-search-input';
+        navInput.placeholder = '@handle.bsky.social';
+        navInput.setAttribute('aria-label', 'Navigate to garden');
+        inputWrap.appendChild(navInput);
+
+        const toggleBtn = document.createElement('button');
+        toggleBtn.type = 'button';
+        toggleBtn.className = 'button button-icon nav-search-toggle';
+        toggleBtn.setAttribute('aria-label', 'Search gardens');
+        toggleBtn.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" width="16" height="16"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>`;
+
+        const dropdown = document.createElement('div');
+        dropdown.className = 'nav-search-dropdown';
+
+        const sentinel = document.createElement('div');
+        sentinel.className = 'nav-search-sentinel';
+        dropdown.appendChild(sentinel);
+
+        navSearch.append(inputWrap, toggleBtn, dropdown);
+
+        let currentQuery = '';
+        let currentCursor: string | undefined;
+        let isLoadingMore = false;
+        let hasMore = false;
+        let searchObserver: IntersectionObserver | null = null;
+
+        const collapseSearch = () => {
+          navSearch.classList.remove('expanded');
+          navInput.value = '';
+          dropdown.classList.remove('open');
+          Array.from(dropdown.children).forEach(c => {
+            if (!c.classList.contains('nav-search-sentinel') && !c.classList.contains('nav-search-loader')) c.remove();
+          });
+          if (searchObserver) { searchObserver.disconnect(); searchObserver = null; }
+          currentCursor = undefined;
+          hasMore = false;
+        };
+
+        const navigateTo = (handle: string) => {
+          const identifier = handle.startsWith('@') ? handle.slice(1) : handle;
+          const path = buildGardenPath(identifier);
+          history.pushState(null, '', path);
+          window.dispatchEvent(new PopStateEvent('popstate'));
+          collapseSearch();
+        };
+
+        const appendResults = (actors: ActorSearchResult[], nextCursor?: string) => {
+          isLoadingMore = false;
+          currentCursor = nextCursor;
+          hasMore = !!nextCursor && actors.length > 0;
+
+          dropdown.querySelector('.nav-search-loader')?.remove();
+
+          if (actors.length === 0 && dropdown.querySelectorAll('.nav-search-result').length === 0) {
+            dropdown.classList.remove('open');
+            return;
+          }
+
+          actors.forEach((actor) => {
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'nav-search-result';
+
+            const { theme } = generateThemeFromDid(actor.did);
+            const { colors, borderWidth, borderStyle, shadow } = theme;
+            btn.style.setProperty('--result-bg', colors.background);
+            btn.style.setProperty('--result-text', colors.text);
+            btn.style.setProperty('--result-muted', colors.muted);
+            btn.style.setProperty('--result-border', colors.border);
+            btn.style.setProperty('--result-border-width', borderWidth);
+            btn.style.setProperty('--result-border-style', borderStyle);
+
+            const shadowValue = shadow.type === 'inset'
+              ? `inset ${shadow.x} ${shadow.y} ${shadow.blur} ${shadow.spread} ${shadow.color}`
+              : `${shadow.x} ${shadow.y} ${shadow.blur} ${shadow.spread} ${shadow.color}`;
+            btn.addEventListener('mouseenter', () => {
+              btn.style.boxShadow = shadowValue;
+              btn.style.transform = 'translateY(-2px)';
+            });
+            btn.addEventListener('mouseleave', () => {
+              btn.style.boxShadow = 'none';
+              btn.style.transform = 'none';
+            });
+
+            const viz = document.createElement('did-visualization');
+            viz.setAttribute('did', actor.did);
+            viz.setAttribute('size', '28');
+
+            const identity = document.createElement('div');
+            identity.className = 'nav-search-result-identity';
+            identity.innerHTML = `
+              <span class="nav-search-result-name">${escapeHtml(actor.displayName || actor.handle)}</span>
+              <span class="nav-search-result-handle">@${escapeHtml(actor.handle)}</span>
+            `;
+            btn.append(viz, identity);
+
+            btn.addEventListener('click', () => navigateTo(actor.handle));
+            btn.addEventListener('keydown', (e) => {
+              if (e.key === 'ArrowDown') {
+                e.preventDefault();
+                const next = btn.nextElementSibling as HTMLElement | null;
+                if (next && next.classList.contains('nav-search-result')) next.focus();
+              } else if (e.key === 'ArrowUp') {
+                e.preventDefault();
+                const prev = btn.previousElementSibling as HTMLElement | null;
+                if (prev && prev.classList.contains('nav-search-result')) prev.focus(); else navInput.focus();
+              } else if (e.key === 'Enter') {
+                e.preventDefault();
+                btn.click();
+              }
+            });
+            dropdown.insertBefore(btn, sentinel);
+          });
+
+          dropdown.classList.add('open');
+
+          if (!searchObserver) {
+            searchObserver = new IntersectionObserver(
+              (entries) => { if (entries[0].isIntersecting) loadMore(); },
+              { root: dropdown, threshold: 1.0 }
+            );
+            searchObserver.observe(sentinel);
+          }
+        };
+
+        const loadMore = async () => {
+          if (isLoadingMore || !hasMore || !currentQuery) return;
+          isLoadingMore = true;
+
+          const loader = document.createElement('div');
+          loader.className = 'nav-search-loader';
+          dropdown.insertBefore(loader, sentinel);
+
+          const { actors, cursor } = await searchActors(currentQuery, currentCursor);
+          appendResults(actors, cursor);
+        };
+
+        // Debounced search
+        let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+        navInput.addEventListener('input', () => {
+          const q = navInput.value.trim();
+          if (debounceTimer) clearTimeout(debounceTimer);
+          if (q.replace(/^@/, '').length < 2) {
+            dropdown.classList.remove('open');
+            Array.from(dropdown.children).forEach(c => {
+              if (!c.classList.contains('nav-search-sentinel')) c.remove();
+            });
+            if (searchObserver) { searchObserver.disconnect(); searchObserver = null; }
+            return;
+          }
+          debounceTimer = setTimeout(async () => {
+            const normalized = q.replace(/^@/, '');
+            currentQuery = normalized;
+            currentCursor = undefined;
+            Array.from(dropdown.children).forEach(c => {
+              if (!c.classList.contains('nav-search-sentinel')) c.remove();
+            });
+            if (searchObserver) { searchObserver.disconnect(); searchObserver = null; }
+            const { actors, cursor } = await searchActors(normalized);
+            appendResults(actors, cursor);
+          }, 250);
+        });
+
+        navInput.addEventListener('keydown', (e) => {
+          if (e.key === 'Escape') {
+            e.preventDefault();
+            collapseSearch();
+            toggleBtn.focus();
+          } else if (e.key === 'ArrowDown') {
+            e.preventDefault();
+            const first = dropdown.querySelector('.nav-search-result') as HTMLElement | null;
+            if (first) first.focus();
+          }
+        });
+
+        navSearch.addEventListener('submit', (e) => {
+          e.preventDefault();
+          const raw = navInput.value.trim();
+          if (!raw) return;
+          navigateTo(raw);
+        });
+
+        toggleBtn.addEventListener('click', () => {
+          if (navSearch.classList.contains('expanded')) {
+            collapseSearch();
+          } else {
+            navSearch.classList.add('expanded');
+            navInput.focus();
+          }
+        });
+
+        // Collapse when clicking outside
+        const outsideClickHandler = (e: MouseEvent) => {
+          if (!navSearch.isConnected) {
+            document.removeEventListener('click', outsideClickHandler);
+            return;
+          }
+          if (!navSearch.contains(e.target as Node)) {
+            collapseSearch();
+          }
+        };
+        document.addEventListener('click', outsideClickHandler);
+
+        controls.appendChild(navSearch);
+
         const isViewingProfile = SiteRouter.isViewingProfile();
 
         if (isLoggedIn()) {
@@ -395,7 +613,7 @@ export class SiteRenderer {
             const currentScrollY = window.scrollY;
             const hiding = currentScrollY > lastScrollY && currentScrollY > 80;
             header.classList.toggle('header--hidden', hiding);
-            if (hiding) closeMenu();
+            if (hiding) { closeMenu(); collapseSearch(); }
             lastScrollY = currentScrollY;
         };
         window.addEventListener('scroll', this.scrollHandler, { passive: true });
