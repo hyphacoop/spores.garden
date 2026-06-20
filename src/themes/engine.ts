@@ -3,39 +3,93 @@ import { getDefaultFontPairing } from './fonts.js';
 import { generateColorsFromDid } from './colors.js';
 import { generateIsolineConfigFromDid, getIsolineSVGStringForDid, clearIsolineCache, type IsolineConfig } from './isolines.js';
 
-/** Current pattern Blob URL; revoked when theme changes to avoid leaks */
-let currentPatternBlobUrl: string | null = null;
-/** Stored so we can regenerate pattern on resize at correct viewport size */
+/** Current pattern Blob URLs for double buffering */
+let currentPatternUrls: [string | null, string | null] = [null, null];
+/** Which buffer is currently visible (0 or 1) */
+let activeBufferIndex = 0;
+
+/** Stored so we can avoid redundant theme applications and regenerate on resize */
+let lastAppliedDid: string | null = null;
+let lastAppliedThemeConfig: any = null;
 let lastPatternDid: string | null = null;
 let lastPatternColors: Record<string, string> | null = null;
 
-/** Browser viewport size (innerWidth/innerHeight = what the user sees) */
+/** Browser viewport size (innerWidth/innerHeight = what the user sees) 
+ * Quantized to nearest 256px to avoid constant regeneration during resize.
+ */
 function getViewportPatternSize(): { w: number; h: number } {
-  const w = Math.max(Math.round(window.innerWidth), 320);
-  const h = Math.max(Math.round(window.innerHeight), 320);
+  const step = 256;
+  const w = Math.ceil(Math.max(window.innerWidth, 320) / step) * step;
+  const h = Math.ceil(Math.max(window.innerHeight, 320) / step) * step;
   return { w, h };
 }
 
-function applyPatternAtViewportSize(): void {
+/** Track viewport size to avoid redundant regenerations */
+let lastW = 0;
+let lastH = 0;
+
+async function applyPatternAtViewportSize(): Promise<void> {
   if (!lastPatternDid || !lastPatternColors) return;
   const { w, h } = getViewportPatternSize();
-  if (currentPatternBlobUrl) URL.revokeObjectURL(currentPatternBlobUrl);
+  
+  // Skip if quantized size hasn't changed
+  if (w === lastW && h === lastH) return;
+  lastW = w;
+  lastH = h;
+
   const svgString = getIsolineSVGStringForDid(lastPatternDid, lastPatternColors, w, h);
   const blob = new Blob([svgString], { type: 'image/svg+xml' });
-  currentPatternBlobUrl = URL.createObjectURL(blob);
+  const newUrl = URL.createObjectURL(blob);
+  
+  // Pre-warm in browser image cache and force decode before swapping CSS var
+  await new Promise<void>(resolve => {
+    const img = new Image();
+    img.onload = () => {
+      if ('decode' in img) {
+        (img as any).decode().then(() => resolve()).catch(() => resolve());
+      } else {
+        resolve();
+      }
+    };
+    img.onerror = () => resolve();
+    img.src = newUrl;
+  });
+  
   const root = document.documentElement;
-  root.style.setProperty('--pattern-background', `url("${currentPatternBlobUrl}")`);
+  const inactiveIndex = 1 - activeBufferIndex;
+  const oldUrl = currentPatternUrls[inactiveIndex];
+  
+  currentPatternUrls[inactiveIndex] = newUrl;
+  root.style.setProperty(`--pattern-bg-${inactiveIndex + 1}`, `url("${newUrl}")`);
   root.style.setProperty('--pattern-width', `${w}px`);
   root.style.setProperty('--pattern-height', `${h}px`);
+  
+  // Crossfade
+  activeBufferIndex = inactiveIndex;
+  if (activeBufferIndex === 1) {
+    root.classList.add('pattern-buffer-swap');
+  } else {
+    root.classList.remove('pattern-buffer-swap');
+  }
+  
+  // Wait for fade transition (400ms in CSS) before revoking old blob
+  setTimeout(() => {
+    if (oldUrl) URL.revokeObjectURL(oldUrl);
+  }, 500);
 }
 
-let resizeThrottleId: ReturnType<typeof setTimeout> | null = null;
+let resizeDebounceId: ReturnType<typeof setTimeout> | null = null;
 function onResize(): void {
-  if (resizeThrottleId) return;
-  resizeThrottleId = setTimeout(() => {
-    resizeThrottleId = null;
-    applyPatternAtViewportSize();
-  }, 150);
+  const { w, h } = getViewportPatternSize();
+  if (w === lastW && h === lastH) return;
+
+  document.documentElement.classList.add('resizing');
+  if (resizeDebounceId) clearTimeout(resizeDebounceId);
+  resizeDebounceId = setTimeout(async () => {
+    resizeDebounceId = null;
+    await applyPatternAtViewportSize();
+    document.documentElement.classList.remove('resizing');
+  }, 400);
 }
 
 let resizeListenerAdded = false;
@@ -61,9 +115,6 @@ const SHADOW_OPACITIES = [0, 0.06, 0.1, 0.14, 0.18, 0.22];
 const SHADOW_TYPES: Array<'normal' | 'inset'> = ['normal', 'normal', 'normal', 'inset'];
 
 const LAST_THEME_STORAGE_KEY = 'spores.lastTheme';
-
-
-
 
 /**
  * Simple hash function to convert a string to a number
@@ -267,6 +318,16 @@ export function applyTheme(
   return new Promise(async (resolve) => {
     const waitForFonts = options?.waitForFonts !== false;
     const did = options?.did;
+
+    // Skip redundant applications if nothing has changed
+    const currentThemeHash = JSON.stringify(themeConfig);
+    if (did === lastAppliedDid && currentThemeHash === lastAppliedThemeConfig) {
+      resolve();
+      return;
+    }
+    lastAppliedDid = did;
+    lastAppliedThemeConfig = currentThemeHash;
+
     const colors = themeConfig.colors || {};
     const fonts = { ...getDefaultFontPairing(), ...themeConfig.fonts };
     const borderStyle = themeConfig.borderStyle || 'solid';
@@ -303,43 +364,43 @@ export function applyTheme(
         : null;
     };
 
-    // Clear all previous inline overrides so CSS :root defaults apply
-    root.removeAttribute('style');
-
     // Colors
-    Object.entries(colors).forEach(([key, value]) => {
-      if (value) {
-        root.style.setProperty(`--color-${key}`, value as string);
-        // Also set RGB version for use with rgba()
-        const rgb = hexToRgb(value as string);
-        if (rgb) {
-          root.style.setProperty(`--color-${key}-rgb`, rgb);
+    // If colors are provided, apply them. If not (homepage), remove the overrides to return to CSS defaults.
+    if (Object.keys(colors).length > 0) {
+      Object.entries(colors).forEach(([key, value]) => {
+        if (value) {
+          root.style.setProperty(`--color-${key}`, value as string);
+          const rgb = hexToRgb(value as string);
+          if (rgb) root.style.setProperty(`--color-${key}-rgb`, rgb);
         }
-      }
-    });
+      });
+      // Set border-dark to be inverted for dark mode (use text color for borders in dark mode)
+      const borderDark = colors.text || '#000000';
+      root.style.setProperty('--color-border-dark', borderDark);
 
-    // Set border-dark to be inverted for dark mode (use text color for borders in dark mode)
-    // In dark mode: dark background -> light borders (text color)
-    // In light mode: light background -> dark borders (text color)
-    const borderDark = colors.text || '#000000';
-    root.style.setProperty('--color-border-dark', borderDark);
-
-    // Persist theme colors for next page load to enable smooth color transitions
-    // between gardens (prevents white flash on navigation)
-    try {
-      sessionStorage.setItem(LAST_THEME_STORAGE_KEY, JSON.stringify({
-        background: colors.background,
-        text: colors.text,
-        muted: colors.muted
-      }));
-    } catch {
-      // Ignore quota exceeded or privacy/security errors
+      // Persist theme colors for next page load
+      try {
+        sessionStorage.setItem(LAST_THEME_STORAGE_KEY, JSON.stringify({
+          background: colors.background,
+          text: colors.text,
+          muted: colors.muted
+        }));
+      } catch {}
+    } else {
+      // No theme (homepage) - clear theme-specific properties so base.css :root takes over
+      const propsToClear = ['background', 'text', 'text-muted', 'primary', 'accent', 'border', 'border-muted', 'border-dark', 'surface'];
+      propsToClear.forEach(p => {
+        root.style.removeProperty(`--color-${p}`);
+        root.style.removeProperty(`--color-${p}-rgb`);
+      });
     }
 
     // Fonts
     Object.entries(fonts).forEach(([key, value]) => {
       if (value) {
         root.style.setProperty(`--font-${key}`, value as string);
+      } else {
+        root.style.removeProperty(`--font-${key}`);
       }
     });
 
@@ -347,54 +408,99 @@ export function applyTheme(
     root.style.setProperty('--border-style', borderStyle);
     root.style.setProperty('--border-width', borderWidth);
 
-    // Drop shadows (all optional; safe defaults live in base.css)
-    if (shadow.type) root.style.setProperty('--shadow-type', String(shadow.type));
-    if (shadow.x) root.style.setProperty('--shadow-x', String(shadow.x));
-    if (shadow.y) root.style.setProperty('--shadow-y', String(shadow.y));
-    if (shadow.blur) root.style.setProperty('--shadow-blur', String(shadow.blur));
-    if (shadow.spread) root.style.setProperty('--shadow-spread', String(shadow.spread));
-    if (shadow.color) root.style.setProperty('--shadow-color', String(shadow.color));
+    // Drop shadows
+    const shadowProps = ['type', 'x', 'y', 'blur', 'spread', 'color'];
+    shadowProps.forEach(p => {
+      if (shadow[p]) root.style.setProperty(`--shadow-${p}`, String(shadow[p]));
+      else root.style.removeProperty(`--shadow-${p}`);
+    });
 
     // Apply isoline background pattern (static image, not motion)
     // Use Blob URL so Chrome doesn't hit data-URI size limit (~2MB).
     // Size SVG to layout viewport (clientWidth/clientHeight) so pattern matches screen.
-    if (did && isolines !== false) {
-      if (currentPatternBlobUrl) {
-        URL.revokeObjectURL(currentPatternBlobUrl);
-        currentPatternBlobUrl = null;
-      }
-      lastPatternDid = did;
-      lastPatternColors = colors;
+    const patternDid = did || 'did:web:spores.garden';
+    const patternColors = did ? colors : { background: '#ffffff', text: '#000000' };
+
+    if (isolines !== false) {
+      // Skip pattern regeneration if it's the same parameters and same dimensions
       const { w, h } = getViewportPatternSize();
-      const svgString = getIsolineSVGStringForDid(did, colors, w, h);
-      const blob = new Blob([svgString], { type: 'image/svg+xml' });
-      const blobUrl = URL.createObjectURL(blob);
-      currentPatternBlobUrl = blobUrl;
-      root.style.setProperty('--pattern-background', `url("${blobUrl}")`);
-      root.style.setProperty('--pattern-width', `${w}px`);
-      root.style.setProperty('--pattern-height', `${h}px`);
-      document.body.classList.add('has-pattern');
-      ensureResizeListener();
-    } else {
-      if (currentPatternBlobUrl) {
-        URL.revokeObjectURL(currentPatternBlobUrl);
-        currentPatternBlobUrl = null;
+      const isSamePattern = patternDid === lastPatternDid && 
+                           JSON.stringify(patternColors) === JSON.stringify(lastPatternColors) &&
+                           w === lastW && h === lastH;
+      
+      if (!isSamePattern) {
+        lastPatternDid = patternDid;
+        lastPatternColors = patternColors as Record<string, string>;
+        lastW = w;
+        lastH = h;
+        
+        const svgString = getIsolineSVGStringForDid(patternDid, lastPatternColors, w, h);
+        const blob = new Blob([svgString], { type: 'image/svg+xml' });
+        const newUrl = URL.createObjectURL(blob);
+        
+        // Pre-warm in browser image cache and force decode before swapping CSS var
+        await new Promise<void>(resolve => {
+          const img = new Image();
+          img.onload = () => {
+            if ('decode' in img) {
+              (img as any).decode().then(() => resolve()).catch(() => resolve());
+            } else {
+              resolve();
+            }
+          };
+          img.onerror = () => resolve();
+          img.src = newUrl;
+        });
+        
+        const inactiveIndex = 1 - activeBufferIndex;
+        const oldUrl = currentPatternUrls[inactiveIndex];
+        
+        currentPatternUrls[inactiveIndex] = newUrl;
+        root.style.setProperty(`--pattern-bg-${inactiveIndex + 1}`, `url("${newUrl}")`);
+        root.style.setProperty('--pattern-width', `${w}px`);
+        root.style.setProperty('--pattern-height', `${h}px`);
+        
+        // Crossfade
+        activeBufferIndex = inactiveIndex;
+        if (activeBufferIndex === 1) {
+          root.classList.add('pattern-buffer-swap');
+        } else {
+          root.classList.remove('pattern-buffer-swap');
+        }
+        
+        // Wait for fade transition (400ms in CSS) before revoking old blob
+        setTimeout(() => {
+          if (oldUrl) URL.revokeObjectURL(oldUrl);
+        }, 500);
+        
+        root.classList.add('has-pattern');
+        ensureResizeListener();
       }
+    } else {
+      const oldUrl1 = currentPatternUrls[0];
+      const oldUrl2 = currentPatternUrls[1];
+      currentPatternUrls = [null, null];
       lastPatternDid = null;
       lastPatternColors = null;
-      root.style.setProperty('--pattern-background', 'none');
-      root.style.removeProperty('--pattern-width');
-      root.style.removeProperty('--pattern-height');
-      document.body.classList.remove('has-pattern');
+      lastW = 0;
+      lastH = 0;
+      
+      if (oldUrl1 || oldUrl2) {
+        root.style.setProperty('--pattern-bg-1', 'none');
+        root.style.setProperty('--pattern-bg-2', 'none');
+        root.style.removeProperty('--pattern-width');
+        root.style.removeProperty('--pattern-height');
+        root.classList.remove('has-pattern');
+        root.classList.remove('pattern-buffer-swap');
+        if (oldUrl1) URL.revokeObjectURL(oldUrl1);
+        if (oldUrl2) URL.revokeObjectURL(oldUrl2);
+      }
     }
 
-    // Clean up stale theme classes (preserve has-pattern if present)
-    const hasPattern = document.body.classList.contains('has-pattern');
-    document.body.className = document.body.className
-      .replace(/theme-\w+/g, '')
-      .trim();
-    if (hasPattern) {
-      document.body.classList.add('has-pattern');
+    // Clean up stale theme classes efficiently without wiping important state
+    const themeClasses = Array.from(root.classList).filter(c => c.startsWith('theme-'));
+    if (themeClasses.length > 0) {
+      root.classList.remove(...themeClasses);
     }
 
     // Wait for fonts to load before marking theme as ready (optional).
@@ -412,7 +518,7 @@ export function applyTheme(
         return document.fonts.ready;
       }).then(() => {
         // Mark fonts as ready
-        document.body.classList.add('fonts-ready');
+        root.classList.add('fonts-ready');
         
         // Mark theme as ready after CSS properties have been applied and painted
         requestAnimationFrame(() => {
@@ -423,7 +529,7 @@ export function applyTheme(
         });
       }).catch(() => {
         // Fallback if font loading fails - show text anyway after a short delay
-        document.body.classList.add('fonts-ready');
+        root.classList.add('fonts-ready');
         setTimeout(() => {
           requestAnimationFrame(() => {
             requestAnimationFrame(() => {
@@ -435,7 +541,7 @@ export function applyTheme(
       });
     } else {
       // No custom fonts to load, Font Loading API not available, or we chose not to wait.
-      document.body.classList.add('fonts-ready');
+      root.classList.add('fonts-ready');
       requestAnimationFrame(() => {
         requestAnimationFrame(() => {
           root.setAttribute('data-theme-ready', 'true');

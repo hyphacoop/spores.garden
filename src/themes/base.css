@@ -92,6 +92,27 @@
   box-sizing: border-box;
 }
 
+html {
+  background-color: #ffffff;
+  /* Smooth color transitions when navigating between gardens */
+  transition: color 0.6s ease-in-out;
+  min-height: 100%;
+  /* Disable rubber-band scrolling and force layer isolation for Chrome stability */
+  overscroll-behavior: none;
+  isolation: isolate;
+}
+
+/* Disable transitions and animations during resize to prevent flickering and performance hits.
+   backdrop-filter is particularly expensive to re-calculate during resize; disabling it
+   minimizes the "flash" of un-blurred background color. */
+html.resizing,
+html.resizing *,
+html.resizing *::before,
+html.resizing *::after {
+  transition: none !important;
+  animation-play-state: paused !important;
+}
+
 body {
   margin: 0;
   padding: 0;
@@ -101,17 +122,49 @@ body {
   font-size: var(--font-size-base);
   line-height: 1.5;
   color: var(--color-text);
-  background-color: var(--color-background);
-  /* Isoline pattern background - fixed, 1:1 with viewport (size set in JS) */
-  background-image: var(--pattern-background, none);
-  background-size: var(--pattern-width, auto) var(--pattern-height, auto);
-  background-repeat: no-repeat;
-  background-attachment: fixed;
-  background-position: 0 0;
-  /* Smooth color transitions when navigating between gardens */
-  transition: background-color 0.6s ease-in-out, color 0.6s ease-in-out;
+  background-color: transparent;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  overscroll-behavior: none;
+}
+
+/* Isoline pattern background - double buffered for smooth crossfades.
+   We use both ::before and ::after to load new patterns in the background
+   and fade them in, eliminating any visual 'pop' or flicker. */
+html::before,
+html::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  will-change: transform, opacity;
+  background-size: cover;
+  background-repeat: no-repeat;
+  background-position: 0 0;
+  /* Optimization for Chrome: avoid image smoothing during resize scales */
+  image-rendering: -webkit-optimize-contrast;
+  transform: translateZ(0);
+  transition: opacity 0.4s ease-in-out;
+}
+
+html::before {
+  background-image: var(--pattern-bg-1, none);
+  opacity: 1;
+}
+
+html::after {
+  background-image: var(--pattern-bg-2, none);
+  opacity: 0;
+}
+
+/* Toggle buffer visibility */
+html.pattern-buffer-swap::before {
+  opacity: 0;
+}
+
+html.pattern-buffer-swap::after {
+  opacity: 1;
 }
 
 /* Skip navigation link for keyboard users */
@@ -138,25 +191,25 @@ body {
 }
 
 /* Hide text until fonts are loaded to prevent flicker */
-body:not(.fonts-ready) h1,
-body:not(.fonts-ready) h2,
-body:not(.fonts-ready) h3,
-body:not(.fonts-ready) h4,
-body:not(.fonts-ready) h5,
-body:not(.fonts-ready) h6,
-body:not(.fonts-ready) .site-title,
-body:not(.fonts-ready) .section-title {
+html:not(.fonts-ready) h1,
+html:not(.fonts-ready) h2,
+html:not(.fonts-ready) h3,
+html:not(.fonts-ready) h4,
+html:not(.fonts-ready) h5,
+html:not(.fonts-ready) h6,
+html:not(.fonts-ready) .site-title,
+html:not(.fonts-ready) .section-title {
   visibility: hidden;
 }
 
-body.fonts-ready h1,
-body.fonts-ready h2,
-body.fonts-ready h3,
-body.fonts-ready h4,
-body.fonts-ready h5,
-body.fonts-ready h6,
-body.fonts-ready .site-title,
-body.fonts-ready .section-title {
+html.fonts-ready h1,
+html.fonts-ready h2,
+html.fonts-ready h3,
+html.fonts-ready h4,
+html.fonts-ready h5,
+html.fonts-ready h6,
+html.fonts-ready .site-title,
+html.fonts-ready .section-title {
   visibility: visible;
   transition: opacity 200ms ease-in-out;
 }
@@ -221,6 +274,7 @@ site-app {
   display: flex;
   flex-direction: column;
   min-height: 100vh;
+  min-height: 100svh;
   /* Ensure main content is centered on ultra-wide screens */
   align-items: center;
   width: 100%;
@@ -232,10 +286,16 @@ site-app:not(.theme-ready) .header {
   opacity: 0;
 }
 
-site-app.theme-ready .main,
-site-app.theme-ready .header {
+site-app.theme-ready:not(.fully-rendered) .main,
+site-app.theme-ready:not(.fully-rendered) .header {
   opacity: 1;
   animation: fadeIn 0.35s ease-out;
+}
+
+/* Once fully rendered, don't re-trigger fadeIn on every sub-render (prevents header flash) */
+site-app.fully-rendered .main,
+site-app.fully-rendered .header {
+  opacity: 1;
 }
 
 .header {
@@ -573,7 +633,7 @@ site-app.theme-ready .header {
   }
 
   /* Match header padding (including safe area) so dropdown aligns when has-pattern */
-  body.has-pattern .controls.open {
+  html.has-pattern .controls.open {
     padding-top: var(--spacing-sm);
     padding-bottom: var(--spacing-sm);
     padding-left: calc(var(--spacing-md) + var(--safe-area-inset-left));
@@ -703,61 +763,106 @@ section-block.section-ready {
 }
 
 /* Liquid glass effect for sections when isoline pattern is active */
-body.has-pattern .section,
-body.has-pattern section-block,
-body.has-pattern section-block.section {
-  background: rgba(var(--color-background-rgb), 0.25) !important;
+html.has-pattern .section,
+html.has-pattern section-block,
+html.has-pattern section-block.section {
+  background: rgba(var(--color-background-rgb), 0.33) !important;
   border-radius: var(--border-radius);
   box-shadow: 0 4px 30px rgba(0, 0, 0, 0.1);
-  backdrop-filter: blur(80px);
-  -webkit-backdrop-filter: blur(80px);
+  backdrop-filter: blur(28px);
+  -webkit-backdrop-filter: blur(28px);
   border: 1px solid rgba(var(--color-text-rgb), 0.1);
   padding: var(--spacing-lg);
+  /* Force hardware acceleration and isolate layer to prevent Chrome flicker during resize */
+  transform: translateZ(0);
+  backface-visibility: hidden;
+  will-change: transform, backdrop-filter;
 }
 
 @media (max-width: 767px) {
-  body.has-pattern .section,
-  body.has-pattern section-block,
-  body.has-pattern section-block.section {
+  html.has-pattern .section,
+  html.has-pattern section-block,
+  html.has-pattern section-block.section {
     padding: var(--spacing-md);
   }
 }
 
 /* Liquid glass effect for header and mobile menu when isoline pattern is active */
-body.has-pattern .header,
-body.has-pattern .controls.open {
-  background: rgba(var(--color-background-rgb), 0.25) !important;
+html.has-pattern .header,
+html.has-pattern .controls.open {
+  background: rgba(var(--color-background-rgb), 0.33) !important;
   box-shadow: 0 4px 30px rgba(0, 0, 0, 0.1);
-  backdrop-filter: blur(80px);
-  -webkit-backdrop-filter: blur(80px);
+  backdrop-filter: blur(28px);
+  -webkit-backdrop-filter: blur(28px);
   border-bottom: 1px solid rgba(var(--color-text-rgb), 0.1);
+  /* Force hardware acceleration and isolate layer to prevent Chrome flicker during resize */
+  transform: translateZ(0);
+  backface-visibility: hidden;
+  will-change: transform, backdrop-filter;
+}
+
+/* Preserve hide-on-scroll transform when pattern acceleration is enabled */
+html.has-pattern .header.header--hidden {
+  transform: translate3d(0, -100%, 0);
 }
 
 /* When menu open: header + dropdown read as one panel (no double border) */
-body.has-pattern .header:has(.controls.open) {
+html.has-pattern .header:has(.controls.open) {
   border-bottom: none !important;
 }
 
 /* Fallback for browsers without backdrop-filter support */
 @supports not (backdrop-filter: blur(1px)) {
 
-  body.has-pattern .section,
-  body.has-pattern section-block,
-  body.has-pattern section-block.section {
+  html.has-pattern .section,
+  html.has-pattern section-block,
+  html.has-pattern section-block.section {
     background: rgba(var(--color-background-rgb), 0.85) !important;
     box-shadow: 0 2px 12px rgba(0, 0, 0, 0.1);
   }
 
-  body.has-pattern .header,
-  body.has-pattern .controls.open {
+  html.has-pattern .header,
+  html.has-pattern .controls.open {
     background: rgba(var(--color-background-rgb), 0.9) !important;
     box-shadow: 0 2px 12px rgba(0, 0, 0, 0.1);
   }
 
-  body.has-pattern .garden-preview__flower-box,
-  body.has-pattern .flower-grid-item {
+  html.has-pattern .garden-preview__flower-box,
+  html.has-pattern .flower-grid-item {
     background: rgba(var(--color-background-rgb), 0.85) !important;
     box-shadow: 0 2px 12px rgba(0, 0, 0, 0.1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html.has-pattern .section,
+  html.has-pattern section-block,
+  html.has-pattern section-block.section,
+  html.has-pattern .header,
+  html.has-pattern .controls.open,
+  html.has-pattern .garden-preview__flower-box,
+  html.has-pattern .flower-grid-item {
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    background: rgba(var(--color-background-rgb), 0.85) !important;
+  }
+}
+
+/* Firefox: html::before with position: fixed causes backdrop-filter scroll-edge flicker.
+   background-attachment: fixed on html avoids that compositing path. */
+/* Firefox: Fixed background hack updated for double buffering */
+@supports (-moz-user-select: text) {
+  html {
+    background-image: var(--pattern-bg-1, var(--pattern-bg-2, none));
+    background-size: cover;
+    background-repeat: no-repeat;
+    background-attachment: fixed;
+    background-position: 0 0;
+  }
+
+  html::before,
+  html::after {
+    display: none;
   }
 }
 
@@ -1919,17 +2024,21 @@ body.has-pattern .header:has(.controls.open) {
 }
 
 /* Liquid glass effect for flower box and flower grid items when isoline pattern is active */
-body.has-pattern .garden-preview__flower-box,
-body.has-pattern .flower-grid-item {
-  background: rgba(var(--color-background-rgb), 0.25) !important;
+html.has-pattern .garden-preview__flower-box,
+html.has-pattern .flower-grid-item {
+  background: rgba(var(--color-background-rgb), 0.33) !important;
   border-radius: var(--border-radius);
   box-shadow: 0 4px 30px rgba(0, 0, 0, 0.1);
-  backdrop-filter: blur(80px);
-  -webkit-backdrop-filter: blur(80px);
+  backdrop-filter: blur(28px);
+  -webkit-backdrop-filter: blur(28px);
   border: 1px solid rgba(var(--color-text-rgb), 0.1);
+  /* Force hardware acceleration and isolate layer to prevent Chrome flicker during resize */
+  transform: translateZ(0);
+  backface-visibility: hidden;
+  will-change: transform, backdrop-filter;
 }
 
-body.has-pattern .flower-grid-item {
+html.has-pattern .flower-grid-item {
   margin-top: var(--spacing-sm);
 }
 

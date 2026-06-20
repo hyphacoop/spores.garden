@@ -118,6 +118,13 @@ class SiteApp extends HTMLElement {
     
     // Render with current config
     await this.renderer.render();
+
+    // After first render, mark app as fully rendered to prevent re-triggering global animations
+    if (isInitialLoad) {
+      requestAnimationFrame(() => {
+        this.classList.add('fully-rendered');
+      });
+    }
   }
 
   /**

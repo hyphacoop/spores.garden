@@ -54,7 +54,10 @@ class SectionBlock extends HTMLElement {
 
   async render() {
     const token = ++this.renderToken;
-    this.classList.remove('section-ready');
+    const isFirstRender = !this.classList.contains('section-ready');
+    if (isFirstRender) {
+      this.classList.remove('section-ready');
+    }
     if (!this.section) {
       this.replaceChildren();
       this.innerHTML = '<div class="error">Invalid section</div>';
@@ -117,24 +120,25 @@ class SectionBlock extends HTMLElement {
     try {
       switch (this.section.type) {
         case 'profile':
-          await this.renderProfile(content);
+          await this.renderProfile(content, isFirstRender);
           break;
         case 'records':
-          await this.renderRecords(content);
+          await this.renderRecords(content, isFirstRender);
           break;
         case 'collected-flowers': {
           const rendered = await renderCollectedFlowers(this.section, {
             onRefresh: () => this.render(),
             editMode: this.editMode,
           });
-          rendered.classList.add('content-enter');
+          // Only add content-enter on first render to avoid repeated fade-ins
+          if (isFirstRender) rendered.classList.add('content-enter');
           content.innerHTML = '';
           content.appendChild(rendered);
           break;
         }
         case 'content':
         case 'block': // Support legacy 'block' type
-          await this.renderBlock(content);
+          await this.renderBlock(content, isFirstRender);
           break;
         case 'share-to-bluesky':
           await this.renderShareToBluesky(content);
@@ -574,7 +578,7 @@ class SectionBlock extends HTMLElement {
     modal.show();
   }
 
-  async renderProfile(container) {
+  async renderProfile(container, isFirstRender = true) {
     const ownerDid = getSiteOwnerDid();
     if (!ownerDid) {
       container.innerHTML = '<p>Log in to create your garden</p>';
@@ -583,8 +587,10 @@ class SectionBlock extends HTMLElement {
 
     // Show loading state
     const loadingEl = createLoadingSpinner('Loading profile...');
-    container.innerHTML = '';
-    container.appendChild(loadingEl);
+    if (isFirstRender) {
+      container.innerHTML = '';
+      container.appendChild(loadingEl);
+    }
 
     try {
       let profileData = null;
@@ -651,7 +657,7 @@ class SectionBlock extends HTMLElement {
       };
 
       const rendered = await renderRecord(record, this.section.layout || 'profile');
-      rendered.classList.add('content-enter');
+      if (isFirstRender) rendered.classList.add('content-enter');
       container.innerHTML = '';
       container.appendChild(rendered);
     } catch (error) {
@@ -659,7 +665,7 @@ class SectionBlock extends HTMLElement {
       const errorEl = createErrorMessage(
         'Failed to load profile',
         async () => {
-          await this.renderProfile(container);
+          await this.renderProfile(container, isFirstRender);
         },
         error instanceof Error ? error.message : String(error)
       );
@@ -668,7 +674,7 @@ class SectionBlock extends HTMLElement {
     }
   }
 
-  async renderRecords(container) {
+  async renderRecords(container, isFirstRender = true) {
     const uris = this.section.records || [];
 
     if (uris.length === 0) {
@@ -678,8 +684,10 @@ class SectionBlock extends HTMLElement {
 
     // Show loading state
     const loadingEl = createLoadingSpinner('Loading records...');
-    container.innerHTML = '';
-    container.appendChild(loadingEl);
+    if (isFirstRender) {
+      container.innerHTML = '';
+      container.appendChild(loadingEl);
+    }
 
     try {
       const records = await getRecordsByUris(uris);
@@ -690,7 +698,8 @@ class SectionBlock extends HTMLElement {
       }
 
       const grid = document.createElement('div');
-      grid.className = 'record-grid content-enter';
+      grid.className = 'record-grid';
+      if (isFirstRender) grid.classList.add('content-enter');
 
       for (const record of records) {
         try {
@@ -725,7 +734,7 @@ class SectionBlock extends HTMLElement {
       const errorEl = createErrorMessage(
         'Failed to load records',
         async () => {
-          await this.renderRecords(container);
+          await this.renderRecords(container, isFirstRender);
         },
         error instanceof Error ? error.message : String(error)
       );
@@ -734,7 +743,7 @@ class SectionBlock extends HTMLElement {
     }
   }
 
-  async renderBlock(container) {
+  async renderBlock(container, isFirstRender = true) {
     const ownerDid = getSiteOwnerDid();
     let content = '';
     let format = 'text';
@@ -747,8 +756,10 @@ class SectionBlock extends HTMLElement {
     if (isContentTextCollection(blockCollection) && blockRkey && ownerDid) {
       // Show loading state
       const loadingEl = createLoadingSpinner('Loading content...');
-      container.innerHTML = '';
-      container.appendChild(loadingEl);
+      if (isFirstRender) {
+        container.innerHTML = '';
+        container.appendChild(loadingEl);
+      }
 
       try {
         const record = await getRecord(ownerDid, blockCollection, blockRkey);
@@ -763,7 +774,7 @@ class SectionBlock extends HTMLElement {
         const errorEl = createErrorMessage(
           'Failed to load content',
           async () => {
-            await this.renderBlock(container);
+            await this.renderBlock(container, isFirstRender);
           },
           error instanceof Error ? error.message : String(error)
         );
@@ -778,7 +789,8 @@ class SectionBlock extends HTMLElement {
     }
 
     const contentDiv = document.createElement('div');
-    contentDiv.className = 'content content-enter';
+    contentDiv.className = 'content';
+    if (isFirstRender) contentDiv.classList.add('content-enter');
 
     try {
       if (format === 'html') {
@@ -805,7 +817,7 @@ class SectionBlock extends HTMLElement {
       const errorEl = createErrorMessage(
         'Failed to render content',
         async () => {
-          await this.renderBlock(container);
+          await this.renderBlock(container, isFirstRender);
         },
         error instanceof Error ? error.message : String(error)
       );

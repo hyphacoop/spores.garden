@@ -123,10 +123,10 @@ export function generateIsolineSVG(
   height: number,
   seed: number
 ): string {
-  // Grid resolution - finer grid for denser, smoother isolines (~10–14px per cell), clamped for performance
+  // Grid resolution - finer grid for denser, smoother isolines (~14px per cell), clamped for performance
   const maxDimension = Math.max(width, height);
-  // Calculate grid size for the largest dimension, clamped between 80 and 160
-  const maxGridSize = Math.max(80, Math.min(160, Math.floor(maxDimension / 10)));
+  // Calculate grid size for the largest dimension, clamped between 60 and 100
+  const maxGridSize = Math.max(60, Math.min(100, Math.floor(maxDimension / 14)));
 
   // Calculate grid dimensions maintaining aspect ratio
   // Ensure at least 2 cells to avoid errors
